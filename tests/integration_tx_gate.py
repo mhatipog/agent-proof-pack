@@ -45,6 +45,8 @@ class TransactionGateTests(unittest.TestCase):
             c.execute("GRANT USAGE ON SCHEMA agentproof_guard TO effect_actor")
             c.execute("GRANT EXECUTE ON FUNCTION agentproof_guard.apply_customer_status(uuid) TO effect_actor")
             c.execute("GRANT SELECT ON public.customers, public.invoices TO effect_reader")
+            c.execute("GRANT SELECT ON agentproof_guard.committed_actions TO effect_reader")
+            c.execute("GRANT USAGE ON SCHEMA agentproof_guard TO effect_reader")
 
     def setUp(self):
         with psycopg.connect(ADMIN) as c:
@@ -54,6 +56,7 @@ class TransactionGateTests(unittest.TestCase):
                 c.execute(f"ALTER TABLE public.{table} DISABLE TRIGGER USER")
             c.execute("TRUNCATE public.customers, public.invoices")
             c.execute("DELETE FROM agentproof_guard.active_actions")
+            c.execute("DELETE FROM agentproof_guard.committed_actions")
             c.execute("DELETE FROM agentproof_guard.action_grants")
             c.execute("INSERT INTO public.customers VALUES ('C-42','open','ada'),('C-99','open','ben')")
             c.execute("INSERT INTO public.invoices VALUES ('I-1',100)")
@@ -86,6 +89,28 @@ class TransactionGateTests(unittest.TestCase):
         with psycopg.connect(ADMIN) as c:
             return c.execute("SELECT consumed_at IS NOT NULL FROM agentproof_guard.action_grants WHERE action_id=%s", (action,)).fetchone()[0]
 
+    def committed(self, action):
+        with psycopg.connect(READER) as c:
+            return c.execute("""
+                SELECT executor_role, customer_id, from_status, to_status, transaction_id
+                FROM agentproof_guard.committed_actions WHERE action_id=%s
+            """, (action,)).fetchone()
+
+    def test_simultaneous_attempts_only_one_can_commit(self):
+        from concurrent.futures import ThreadPoolExecutor
+        action = self.grant()
+        def attempt(_):
+            try:
+                return self.act(action)
+            except psycopg.Error:
+                return "refused"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(attempt, range(2)))
+        self.assertCountEqual(outcomes, ["applied", "refused"])
+        self.assertEqual(self.state(), ("won", 100))
+        self.assertTrue(self.consumed(action))
+        self.assertIsNotNone(self.committed(action))
+
     def test_authorized_update_and_independent_witness(self):
         before = capture_postgres(READER, CONTRACT, KEY)
         action = self.grant()
@@ -95,6 +120,7 @@ class TransactionGateTests(unittest.TestCase):
         self.assertTrue(verify_witness(result, KEY))
         self.assertEqual(self.state(), ("won", 100))
         self.assertTrue(self.consumed(action))
+        self.assertEqual(self.committed(action)[:4], ("effect_actor", "C-42", "open", "won"))
 
     def test_direct_write_forbidden_by_privileges(self):
         with self.assertRaises(psycopg.Error):
@@ -132,6 +158,7 @@ class TransactionGateTests(unittest.TestCase):
             self.act(action)
         self.assertEqual(self.state(), ("open", 100))
         self.assertFalse(self.consumed(action))
+        self.assertIsNone(self.committed(action))
 
     def test_wrong_executor_role_denied(self):
         action = self.grant(role="some_other_role")
@@ -178,10 +205,15 @@ class TransactionGateTests(unittest.TestCase):
                 self.act(action)
             self.assertEqual(self.state(), ("open", 100))
             self.assertFalse(self.consumed(action))
+            self.assertIsNone(self.committed(action))
         finally:
             with psycopg.connect(ADMIN) as c:
                 c.execute("DROP TRIGGER zz_inject_invoice ON public.customers")
                 c.execute("DROP FUNCTION public.inject_invoice()")
+        # The failed transaction must not consume its grant.
+        self.assertEqual(self.act(action), "applied")
+        self.assertEqual(self.state(), ("won", 100))
+        self.assertIsNotNone(self.committed(action))
 
     def test_trigger_generated_other_customer_change_rolls_back(self):
         with psycopg.connect(ADMIN) as c:
