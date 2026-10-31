@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 866" width="1500" height="866" role="img" aria-labelledby="title description">
+<title id="title">Agent Proof Pack — architecture</title><desc id="description">A software architecture diagram showing trusted operator-owned approval, untrusted AI agent, target database, and independent read-only witness. It distinguishes snapshot verification for SQLite and PostgreSQL from a transaction-bound guarded PostgreSQL sandbox, with redacted authenticated evidence.</desc>
+<defs><marker id="grey" markerWidth="8" markerHeight="8" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0L7 3.5L0 7Z" fill="#475569"/></marker><marker id="blue" markerWidth="8" markerHeight="8" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0L7 3.5L0 7Z" fill="#2563eb"/></marker><marker id="green" markerWidth="8" markerHeight="8" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0L7 3.5L0 7Z" fill="#0f766e"/></marker></defs><rect width="1500" height="866" fill="#fff"/>
+<rect x="45" y="40" width="6" height="48" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="1.5"/>
+<text x="65" y="70" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="32" font-weight="750" text-anchor="start">Agent Proof Pack</text>
+<text x="65" y="101" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="17" font-weight="400" text-anchor="start">Verify what the agent actually changed — not what it claims.</text>
+<rect x="1232" y="61" width="216" height="28" rx="7" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="1.5"/>
+<text x="1340" y="79" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="650" text-anchor="middle">REFERENCE ARCHITECTURE</text>
+<path d="M178 186 V144 H1304 V187" fill="none" stroke="#0f766e" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#green)"/>
+<rect x="632" y="130" width="254" height="26" rx="0" fill="#fff" stroke="#fff" stroke-width="1.5"/>
+<text x="759" y="148" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f766e" font-size="13" font-weight="650" text-anchor="middle">Operator-owned expected outcome</text>
+<rect x="54" y="188" width="250" height="297" rx="10" fill="#fff" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="54" y="188" width="250" height="44" rx="10" fill="#f1f5f9" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="55" y="219" width="248" height="12" fill="#f1f5f9"/>
+<text x="73" y="214" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="700" text-anchor="start">01   TRUSTED APPROVER</text>
+<rect x="351" y="188" width="214" height="297" rx="10" fill="#fff" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="351" y="188" width="214" height="44" rx="10" fill="#f1f5f9" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="352" y="219" width="212" height="12" fill="#f1f5f9"/>
+<text x="370" y="214" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="700" text-anchor="start">02   AI AGENT / TOOL</text>
+<rect x="612" y="188" width="492" height="297" rx="10" fill="#fff" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="612" y="188" width="492" height="44" rx="10" fill="#f1f5f9" stroke="#aebed1" stroke-width="1.5"/>
+<rect x="613" y="219" width="490" height="12" fill="#f1f5f9"/>
+<text x="631" y="214" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="700" text-anchor="start">03   TARGET SYSTEM / DATABASE</text>
+<rect x="1151" y="188" width="299" height="297" rx="10" fill="#fff" stroke="#8eb7dc" stroke-width="1.5"/>
+<rect x="1151" y="188" width="299" height="44" rx="10" fill="#eff6ff" stroke="#8eb7dc" stroke-width="1.5"/>
+<rect x="1152" y="219" width="297" height="12" fill="#eff6ff"/>
+<text x="1170" y="214" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="12" font-weight="700" text-anchor="start">04   INDEPENDENT WITNESS</text>
+<circle cx="101" cy="285" r="17" fill="#fff" stroke="#334155" stroke-width="2.5"/><path d="M69 332 C69 299 133 299 133 332" fill="#dbeafe" stroke="#334155" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="150" y="281" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="16" font-weight="700" text-anchor="start">Defines approval</text>
+<text x="150" y="304" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">and expected result</text>
+<path d="M73 349H284" stroke="#d1dbe8"/>
+<text x="73" y="378" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Allowed transition</text>
+<text x="73" y="410" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Scoped policy / consent</text>
+<text x="73" y="442" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Independent verifier key</text>
+<rect x="410" y="265" width="90" height="64" rx="7" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<path d="M425 288l13 10-13 10 M447 308h31" fill="none" stroke="#334155" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="422" cy="275" r="3" fill="#2563eb"/><circle cx="434" cy="275" r="3" fill="#94a3b8"/>
+<text x="458" y="360" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="16" font-weight="700" text-anchor="middle">Requests action</text>
+<text x="458" y="386" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="middle">May claim success</text>
+<path d="M369 409H546" stroke="#d1dbe8"/>
+<text x="458" y="436" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#b45309" font-size="14" font-weight="650" text-anchor="middle">Untrusted execution</text>
+<text x="458" y="458" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="12" font-weight="400" text-anchor="middle">No verifier credentials</text>
+<rect x="631" y="247" width="216" height="113" rx="7" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="646" y="276" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="16" font-weight="700" text-anchor="start">Snapshot observer</text>
+<text x="646" y="302" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="14" font-weight="400" text-anchor="start">SQLite + PostgreSQL</text>
+<text x="646" y="328" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="13" font-weight="400" text-anchor="start">Selected watched tables</text>
+<rect x="868" y="247" width="215" height="113" rx="7" fill="#ecfdf5" stroke="#9bcfbd" stroke-width="1.5"/>
+<text x="883" y="276" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#047857" font-size="16" font-weight="700" text-anchor="start">Transaction gate</text>
+<text x="883" y="302" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="14" font-weight="400" text-anchor="start">PostgreSQL sandbox</text>
+<text x="883" y="328" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="12" font-weight="400" text-anchor="start">Grant + triggers + rollback</text>
+<rect x="630" y="374" width="454" height="86" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<ellipse cx="668" cy="397" rx="16" ry="7" fill="#dbeafe" stroke="#475569" stroke-width="1.8"/><path d="M652 397v25c0 10 32 10 32 0v-25M652 409c0 9 32 9 32 0" fill="none" stroke="#475569" stroke-width="1.8"/>
+<text x="697" y="404" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="15" font-weight="650" text-anchor="start">Business data &amp; protected records</text>
+<rect x="697" y="418" width="106" height="28" rx="7" fill="#e2e8f0" stroke="#e2e8f0" stroke-width="1.5"/>
+<text x="750" y="436" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="650" text-anchor="middle">customers</text>
+<rect x="814" y="418" width="87" height="28" rx="7" fill="#e2e8f0" stroke="#e2e8f0" stroke-width="1.5"/>
+<text x="857.5" y="436" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="12" font-weight="650" text-anchor="middle">invoices</text>
+<rect x="911" y="418" width="153" height="28" rx="7" fill="#d1fae5" stroke="#d1fae5" stroke-width="1.5"/>
+<text x="987.5" y="436" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#065f46" font-size="12" font-weight="650" text-anchor="middle">action / row effect</text>
+<circle cx="1191" cy="280" r="17" fill="#fff" stroke="#2563eb" stroke-width="2.5"/><path d="M1204 293l17 17" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linecap="round"/>
+<text x="1235" y="278" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="16" font-weight="700" text-anchor="start">Read-only observer</text>
+<text x="1235" y="304" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="13" font-weight="400" text-anchor="start">Separate credentials</text>
+<path d="M1171 330H1432" stroke="#dbeafe"/>
+<text x="1171" y="358" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Checks expected vs observed</text>
+<text x="1171" y="384" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Matches guarded TX records</text>
+<text x="1171" y="410" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="14" font-weight="400" text-anchor="start">•  Authenticates result (HMAC)</text>
+<rect x="1170" y="439" width="83" height="28" rx="7" fill="#dcfce7" stroke="#dcfce7" stroke-width="1.5"/>
+<text x="1211.5" y="457" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#166534" font-size="12" font-weight="650" text-anchor="middle">VERIFIED</text>
+<rect x="1263" y="439" width="75" height="28" rx="7" fill="#fee2e2" stroke="#fee2e2" stroke-width="1.5"/>
+<text x="1300.5" y="457" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#991b1b" font-size="12" font-weight="650" text-anchor="middle">FAILED</text>
+<rect x="1348" y="439" width="84" height="28" rx="7" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="1.5"/>
+<text x="1390" y="457" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="650" text-anchor="middle">NO PROOF</text>
+<path d="M304 326 H346" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<text x="326" y="304" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="600" text-anchor="middle">grant</text>
+<path d="M565 326 H606" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<text x="585" y="304" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="600" text-anchor="middle">write</text>
+<path d="M1104 326 H1145" fill="none" stroke="#2563eb" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 5" marker-end="url(#blue)"/>
+<rect x="1095" y="298" width="57" height="19" rx="0" fill="#fff" stroke="#fff" stroke-width="1.5"/>
+<text x="1123" y="312" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#2563eb" font-size="10" font-weight="700" text-anchor="middle">read-only</text>
+<text x="54" y="541" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="14" font-weight="750" text-anchor="start">TWO VERIFICATION MODES</text>
+<path d="M54 553H1450" stroke="#d7e0ea" stroke-width="1.5"/>
+<rect x="54" y="575" width="680" height="223" rx="11" fill="#f7faff" stroke="#b8d2f2" stroke-width="1.5"/>
+<rect x="755" y="575" width="695" height="223" rx="11" fill="#f8fcfa" stroke="#b3d8ca" stroke-width="1.5"/>
+<rect x="75" y="591" width="32" height="28" rx="7" fill="#dbeafe" stroke="#dbeafe" stroke-width="1.5"/>
+<text x="91" y="609" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="12" font-weight="650" text-anchor="middle">A</text>
+<text x="119" y="613" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="20" font-weight="700" text-anchor="start">Snapshot outcome witness</text>
+<text x="119" y="635" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="13" font-weight="400" text-anchor="start">SQLite + PostgreSQL · read-only before / after comparison</text>
+<rect x="776" y="591" width="32" height="28" rx="7" fill="#d1fae5" stroke="#d1fae5" stroke-width="1.5"/>
+<text x="792" y="609" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#047857" font-size="12" font-weight="650" text-anchor="middle">B</text>
+<text x="820" y="613" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#0f172a" font-size="20" font-weight="700" text-anchor="start">Transaction-bound evidence</text>
+<text x="820" y="635" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="13" font-weight="400" text-anchor="start">Guarded PostgreSQL sandbox · exact action ID + row effect</text>
+<rect x="79" y="659" width="169" height="65" rx="6" fill="#fff" stroke="#c5d5e8" stroke-width="1.5"/>
+<text x="163.5" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="13" font-weight="700" text-anchor="middle">BEFORE</text>
+<text x="163.5" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">Signed baseline</text>
+<rect x="305" y="659" width="173" height="65" rx="6" fill="#fff" stroke="#c5d5e8" stroke-width="1.5"/>
+<text x="391.5" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="13" font-weight="700" text-anchor="middle">ACTION</text>
+<text x="391.5" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">Tool changes database</text>
+<rect x="535" y="659" width="172" height="65" rx="6" fill="#fff" stroke="#c5d5e8" stroke-width="1.5"/>
+<text x="621" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#1d4ed8" font-size="13" font-weight="700" text-anchor="middle">AFTER</text>
+<text x="621" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">Independent readback</text>
+<path d="M252 691H300" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<path d="M481 691H530" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<rect x="778" y="659" width="191" height="65" rx="6" fill="#fff" stroke="#bad9cd" stroke-width="1.5"/>
+<text x="873.5" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#047857" font-size="13" font-weight="700" text-anchor="middle">GRANT</text>
+<text x="873.5" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">One-use, role-bound</text>
+<rect x="1008" y="659" width="191" height="65" rx="6" fill="#fff" stroke="#bad9cd" stroke-width="1.5"/>
+<text x="1103.5" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#047857" font-size="13" font-weight="700" text-anchor="middle">COMMIT</text>
+<text x="1103.5" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">Final-row AFTER trigger</text>
+<rect x="1238" y="659" width="187" height="65" rx="6" fill="#fff" stroke="#bad9cd" stroke-width="1.5"/>
+<text x="1331.5" y="684" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#047857" font-size="13" font-weight="700" text-anchor="middle">RECEIPT</text>
+<text x="1331.5" y="708" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#475569" font-size="12" font-weight="400" text-anchor="middle">Independent HMAC</text>
+<path d="M972 691H1003" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<path d="M1202 691H1233" fill="none" stroke="#475569" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#grey)"/>
+<text x="80" y="761" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="13" font-weight="400" text-anchor="start">Detects no-op, wrong row and collateral changes in the watched set.</text>
+<text x="80" y="781" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="12" font-weight="400" text-anchor="start">Concurrent legitimate writes may conservatively fail verification.</text>
+<text x="779" y="761" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#334155" font-size="13" font-weight="400" text-anchor="start">Independent proofs for concurrent, separately approved actions.</text>
+<text x="779" y="781" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="12" font-weight="400" text-anchor="start">Only specific guarded tables and transitions; not global CDC.</text>
+<path d="M54 830H1450" stroke="#d1dbe8"/>
+<text x="56" y="853" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#b45309" font-size="12" font-weight="750" text-anchor="start">SCOPE</text>
+<text x="119" y="853" font-family="Inter,Segoe UI,Arial,sans-serif" fill="#64748b" font-size="12" font-weight="400" text-anchor="start">Operator-selected watch set. TX gate is a sandbox reference; owners, external side effects and unwatched tables remain outside the guarantee.</text>
+</svg>
