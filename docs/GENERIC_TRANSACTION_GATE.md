@@ -48,6 +48,8 @@ GRANT EXECUTE ON FUNCTION agentproof_generic.apply_text_change(uuid)
   TO incident_prod_actor;
 ```
 
+An operator can enforce a **code freeze even after granting permission** by setting `revoked_at` on pending authorizations in the protected grants table. Revocation prevents subsequent use of those grants; it cannot retroactively stop an action that has already acquired the grant lock and begun executing.
+
 An actor's `SESSION_USER` is checked server-side, and the temporary approval context is stored in a protected table with the real PostgreSQL backend PID and transaction ID. It **cannot** be authorized by spoofing a `SET LOCAL` session parameter. The grant is locked for concurrent calls and its consumption rolls back if the operation fails.
 
 The example only works if the operator's exact original value matches the database. Passing the same grant again fails. The functions use properly quoted SQL identifiers, bound values and a hard-coded supported type allowlist.
@@ -58,7 +60,7 @@ The [test suite](../tests/integration_chinook_generic_gate.py) runs against real
 
 - Allowed one-row email update commits, one-time grant is consumed and separate read-only evidence verifies the result.
 - Direct customer writes fail even when the actor retains native column UPDATE permission, because no protected action context is present.
-- Wrong role, expired/missing grant, stale original value and grant replay are denied.
+- Wrong role, expired/missing grant, operator-revoked grant (code freeze), stale original value and grant replay are denied.
 - A malicious AFTER UPDATE trigger attempting to zero an invoice line causes **atomic rollback** of both the permitted email update and the invoice mutation, leaving the grant usable.
 - An additional customer change inside a nested trigger fails.
 - An extra unauthorized statement after the approved function returns, in the same transaction, rolls back the whole operation.
