@@ -6,6 +6,7 @@ created on 127.0.0.1 and removed on exit. Docker + psycopg3 are required.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import pathlib
@@ -105,11 +106,18 @@ def demo(*, show_receipt: bool = False) -> dict:
         before = observe_transaction(reader, contract(first, "C-42"), key)
         if before["statement"]["predicate"]["status"] != "failed":
             raise RuntimeError("pre-commit evidence should be absent")
-        # Two separately authorized transactions; neither can change invoices.
-        with psycopg.connect(actor) as conn:
-            conn.execute("SELECT agentproof_guard.apply_customer_status(%s)", (first,))
-        with psycopg.connect(actor) as conn:
-            conn.execute("SELECT agentproof_guard.apply_customer_status(%s)", (second,))
+        # Truly concurrent, separate approved transactions (different rows).
+        # One connection per action; database commit occurs on context exit.
+        def apply(action):
+            with psycopg.connect(actor) as conn:
+                return conn.execute(
+                    "SELECT agentproof_guard.apply_customer_status(%s)", (action,)
+                ).fetchone()[0]
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(apply, (first, second)))
+        if results != ["applied", "applied"]:
+            raise RuntimeError("concurrent authorized actions were not applied")
         receipt1 = observe_transaction(reader, contract(first, "C-42"), key)
         receipt2 = observe_transaction(reader, contract(second, "C-99"), key)
         for receipt in (receipt1, receipt2):
@@ -134,6 +142,7 @@ def demo(*, show_receipt: bool = False) -> dict:
             "sandbox": "docker-postgresql-16",
             "first_action": receipt1["statement"]["predicate"]["status"],
             "second_action": receipt2["statement"]["predicate"]["status"],
+            "approved_actions_executed_concurrently": True,
             "unauthorized_invoice_write": "blocked",
             "invoice_amount_unchanged": True,
             "current_state": "both approved customer changes committed",
