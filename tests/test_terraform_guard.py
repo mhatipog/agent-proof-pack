@@ -197,6 +197,22 @@ class TerraformReviewTests(unittest.TestCase):
                     apply_saved_plan(plan, POLICY, approved_sha256="0"*64)
                 run.assert_not_called()
 
+    def test_state_move_even_noop_must_block(self):
+        p = deepcopy(SAFE)
+        p["resource_changes"][0]["change"]["actions"] = ["no-op"]
+        p["resource_changes"][0]["previous_address"] = "terraform_data.old"
+        self.blocked(p)
+
+    def test_import_does_not_hide_in_create_action(self):
+        p = deepcopy(SAFE)
+        p["resource_changes"][0]["change"]["importing"] = {"id": "existing-resource"}
+        self.blocked(p)
+
+    def test_generated_import_config_also_blocks(self):
+        p = deepcopy(SAFE)
+        p["resource_changes"][0]["change"]["generated_config"] = "resource \"terraform_data\" \"example\" {}"
+        self.blocked(p)
+
     def test_symlink_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = Path(tmp) / "plan"
