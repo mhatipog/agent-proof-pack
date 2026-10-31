@@ -23,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 def docker(*args: str) -> str:
     result = subprocess.run(
-        ["docker", *args], check=True, capture_output=True, text=True, timeout=35)
+        ["docker", *args], check=True, capture_output=True, text=True, timeout=120)
     return result.stdout.strip()
 
 
