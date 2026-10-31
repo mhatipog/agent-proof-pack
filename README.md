@@ -8,6 +8,11 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## Architecture
+
+![Agent Proof Pack architecture: trusted approval, restricted agent execution, independent verification, and two evidence modes](docs/architecture.svg)
+
+The two verification paths are deliberately distinct: read-only **before/after snapshots** support SQLite and PostgreSQL; **transaction-bound receipts** are currently demonstrated only by the protected PostgreSQL sandbox. The observer uses separate credentials, and neither mode is a general-purpose production firewall.
 ## One-command live transaction proof (disposable PostgreSQL)
 
 For a real, completely isolated demonstration with **two concurrent approved customer updates**, independently authenticated outcomes, and a forbidden invoice write, run from the repository root:
