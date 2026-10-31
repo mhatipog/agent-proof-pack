@@ -1,0 +1,94 @@
+name: Documented incident class on upstream Chinook PostgreSQL
+on:
+  pull_request:
+    paths:
+      - "tests/integration_chinook_incident.py"
+      - ".github/workflows/chinook-incident.yml"
+      - "docs/CHINOOK_INCIDENT_LAB.md"
+  push:
+    branches: [main]
+    paths:
+      - "tests/integration_chinook_incident.py"
+      - ".github/workflows/chinook-incident.yml"
+      - "docs/CHINOOK_INCIDENT_LAB.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chinook:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ephemeral-owner-password
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AGENTPROOF_CHINOOK_ADMIN_DSN: "postgresql://postgres:ephemeral-owner-password@localhost:5432/chinook"
+      AGENTPROOF_CHINOOK_WRITER_DSN: "postgresql://incident_prod_actor:ephemeral-actor-password@localhost:5432/chinook"
+      AGENTPROOF_CHINOOK_READER_DSN: "postgresql://incident_witness_reader:ephemeral-reader-password@localhost:5432/chinook"
+      AGENTPROOF_CHINOOK_STAGING_DSN: "postgresql://incident_dev_actor:ephemeral-dev-password@localhost:5432/chinook"
+      PG_BOOTSTRAP_URL: "postgresql://postgres:ephemeral-owner-password@localhost:5432/postgres"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional PostgreSQL driver and psql
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "psycopg[binary]>=3.2,<4"
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+      - name: Import actual MIT-licensed Chinook v1.4.5 SQL into isolated PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Commit-pinned upstream: this IS NOT a synthetic schema generated here.
+          curl -fLsS --retry 3 --max-time 90 \
+            "https://raw.githubusercontent.com/lerocha/chinook-database/4a944a942426e1f3263fe539155fb7ef92b04b4a/ChinookDatabase/DataSources/Chinook_PostgreSql.sql" \
+            -o "$RUNNER_TEMP/chinook.sql"
+          grep -q 'Chinook Database - Version 1.4.5' "$RUNNER_TEMP/chinook.sql"
+          grep -q '^CREATE TABLE customer' "$RUNNER_TEMP/chinook.sql"
+          grep -q '^CREATE TABLE invoice_line' "$RUNNER_TEMP/chinook.sql"
+          psql "$PG_BOOTSTRAP_URL" -X -v ON_ERROR_STOP=1 -q -f "$RUNNER_TEMP/chinook.sql" > /dev/null
+          python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ['AGENTPROOF_CHINOOK_ADMIN_DSN']) as conn:
+              c = conn.execute("SELECT (SELECT count(*) FROM customer), "
+                               "(SELECT count(*) FROM invoice_line)").fetchone()
+              assert c[0] >= 40 and c[1] >= 1000, c
+              print(f"Imported upstream Chinook: {c[0]} customer records, {c[1]} invoice lines")
+          PY
+      - name: Provision deliberately separated roles and least-privilege grants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ['PG_BOOTSTRAP_URL']) as c:
+              c.execute("CREATE ROLE incident_prod_actor LOGIN PASSWORD 'ephemeral-actor-password'")
+              c.execute("CREATE ROLE incident_dev_actor LOGIN PASSWORD 'ephemeral-dev-password'")
+              c.execute("CREATE ROLE incident_witness_reader LOGIN PASSWORD 'ephemeral-reader-password'")
+              c.execute("REVOKE CONNECT ON DATABASE chinook FROM PUBLIC")
+              c.execute("GRANT CONNECT ON DATABASE chinook TO incident_prod_actor, incident_witness_reader")
+          with psycopg.connect(os.environ['AGENTPROOF_CHINOOK_ADMIN_DSN']) as c:
+              c.execute("GRANT USAGE ON SCHEMA public TO incident_prod_actor, incident_witness_reader")
+              c.execute("GRANT SELECT ON public.customer TO incident_prod_actor")
+              c.execute("GRANT UPDATE(email) ON public.customer TO incident_prod_actor")
+              c.execute("GRANT SELECT ON public.customer, public.invoice_line TO incident_witness_reader")
+          PY
+      - name: Test deletion attempts, atomic rollback and independent evidence
+        run: python -m unittest discover -s tests -p "integration_chinook_incident.py" -v
+      - name: Existing SQLite and PostgreSQL codec regression tests
+        run: python -m unittest discover -s tests -p "test_pg_codec.py" -v
