@@ -1,4 +1,4 @@
-"""Small standalone CLI for the independent SQLite effect witness."""
+"""Standalone CLI for read-only SQLite/PostgreSQL effect witnesses."""
 import argparse
 import json
 import os
@@ -35,7 +35,7 @@ def _secret(name):
 def demo(mode='correct'):
     """Real, isolated database update; no agents, cloud accounts or secrets."""
     contract = {
-        'schema': 'agent-proof-pack/sqlite-effect-contract/v1', 'id': 'crm_status',
+        'schema': 'agent-proof-pack/effect-contract/v2', 'id': 'crm_status',
         'watch_tables': ['customers', 'invoices'],
         'target': {'table': 'customers', 'key_column': 'id', 'key': 'C-42',
                    'expected': {'status': 'won'}, 'allowed_columns': ['status'],
