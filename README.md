@@ -18,7 +18,7 @@ For a Terraform sandbox, Agent Proof Pack now runs the whole lifecycle:
 2. **Approve** the exact plan, policy, environment, and expected result with a short-lived HMAC signature held outside the agent runtime.
 3. **Execute** only from a privileged runner after checking that signature and the same saved plan snapshot; raw SHA-256 values no longer authorize `--execute`.
 4. **Observe** actual file bytes through a separate filesystem reader (not the agent's claim or Terraform state).
-5. **Verify or flag a mismatch**, recording a machine-readable, content-free evidence receipt.
+5. **Verify or flag a mismatch**, sealing the complete machine-readable outcome with a verifier-held HMAC so later tampering is detectable.
 
 [**See the complete, running Terraform local_file proof**](docs/TERRAFORM_GATE.md) · [Real Terraform CI](.github/workflows/terraform-integration.yml) · [Test failures derived from public incidents](docs/INCIDENT_EVIDENCE.md).
 
@@ -32,7 +32,8 @@ python -m agentproof terraform --plan-json examples/terraform/destructive-plan.j
 python -m unittest discover -s tests -v
 ```
 
-The included workflow also runs the real HashiCorp `local_file` provider in an ephemeral CI directory, verifies a signed sandbox approval, checks the independently observed result, and deliberately tampers with the file to prove detection.
+An authenticated outcome can be checked later with `python -m agentproof check-outcome --receipt proof.json --key-env APP_APPROVAL_KEY` (the key belongs only to trusted infrastructure).
+\nThe included workflow also runs the real HashiCorp `local_file` provider in an ephemeral CI directory, verifies a signed sandbox approval, checks the independently observed result, and deliberately tampers with the file to prove detection.
 
 > **Scope:** The independent observer currently supports controlled filesystem resources; AWS/Azure/GCP readback adapters, production-grade identity, replay prevention, key management, and durable audit sinks are **not yet implemented**. An agent with direct production credentials can bypass this layer. No universal correctness or security claim is made.
 
