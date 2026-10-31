@@ -1,6 +1,8 @@
 """No database required: strict untrusted-tool interface and tamper checks."""
 import copy
 import unittest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from agentproof.effect import EffectError
 from agentproof.generic_cli import (
@@ -59,6 +61,27 @@ class GenericInterfaceTests(unittest.TestCase):
     def test_no_database_connection_needed_to_fail_closed(self):
         with self.assertRaises(EffectError):
             observe_approved("", CONTRACT, KEY)
+
+    def test_exact_contract_and_freshness_are_required_for_useful_proof(self):
+        grant = (42, "customer_id", "1", "email", "old@example.invalid",
+                 "new@example.invalid", "restricted_agent", datetime.now(timezone.utc), None)
+        committed = (42, "customer_id", "1", "email", "old@example.invalid",
+                     "new@example.invalid", "restricted_agent", 123456)
+        with patch("agentproof.generic_cli._read",
+                   return_value=(grant, committed, ("public", "customer", False, False),
+                                 "new@example.invalid")):
+            receipt = observe_approved("unused", CONTRACT, KEY)
+        self.assertEqual(receipt["statement"]["predicate"]["status"], "verified")
+        self.assertTrue(verify_outcome(receipt, KEY, contract=CONTRACT))
+        wrong = copy.deepcopy(CONTRACT)
+        wrong["action_id"] = "22222222-2222-4222-8222-222222222222"
+        self.assertFalse(verify_outcome(receipt, KEY, contract=wrong))
+        self.assertFalse(verify_outcome(receipt, KEY, contract=CONTRACT,
+                                        now=datetime.now(timezone.utc) + timedelta(hours=1)))
+        self.assertFalse(verify_outcome(receipt, KEY, contract=CONTRACT,
+                                        now=datetime.now(timezone.utc) - timedelta(hours=1)))
+        self.assertFalse(verify_outcome(receipt, KEY, contract=CONTRACT,
+                                        max_age_seconds=-1))
 
     def test_signed_success_without_hmac_rejected(self):
         receipt = {"statement": {"_type": "https://in-toto.io/Statement/v1",
