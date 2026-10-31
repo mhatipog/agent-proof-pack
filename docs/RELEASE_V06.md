@@ -25,7 +25,7 @@ python -m agentproof.effect_cli demo --mode collateral
 
 The second command returns a nonzero exit because the intended CRM update also changed an unrelated invoice. No database installation is required for this demo.
 
-For a dedicated PostgreSQL read-only account, see [the integration guide](docs/POSTGRESQL.md). The [CI workflow](.github/workflows/postgres-effect.yml) shows the full real-database test.
+For a dedicated PostgreSQL read-only account, see [the integration guide](https://github.com/mhatipog/agent-proof-pack/blob/v0.6.0/docs/POSTGRESQL.md). The [CI workflow](https://github.com/mhatipog/agent-proof-pack/blob/v0.6.0/.github/workflows/postgres-effect.yml) shows the full real-database test.
 
 ## Evidence and limitations
 
