@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import unittest
-from urllib.parse import urlsplit, urlunsplit
 
 try:
     import psycopg
@@ -57,6 +56,8 @@ class ChinookIncidentReconstruction(unittest.TestCase):
             cls.line_count = conn.execute("SELECT count(*) FROM public.invoice_line").fetchone()[0]
             cls.original_email = conn.execute(
                 "SELECT email FROM public.customer WHERE customer_id=1").fetchone()[0]
+            cls.original_email_second = conn.execute(
+                "SELECT email FROM public.customer WHERE customer_id=2").fetchone()[0]
             cls.original_price = conn.execute(
                 "SELECT unit_price FROM public.invoice_line WHERE invoice_line_id=1"
             ).fetchone()[0]
@@ -72,6 +73,8 @@ class ChinookIncidentReconstruction(unittest.TestCase):
                          (self.original_email,))
             conn.execute("UPDATE public.invoice_line SET unit_price=%s WHERE invoice_line_id=1",
                          (self.original_price,))
+            conn.execute("UPDATE public.customer SET email=%s WHERE customer_id=2",
+                         (self.original_email_second,))
         self.before = capture_postgres(READER, CONTRACT, KEY)
 
     def customer_email(self):
