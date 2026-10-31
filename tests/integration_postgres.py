@@ -194,10 +194,10 @@ class PostgreSQLRealIntegration(unittest.TestCase):
         self.assertEqual(result["statement"]["predicate"]["status"], "failed")
 
     def test_typed_schema_rejects_naive_timestamp_expectation(self):
-        customer_id, _, contract, before = self.prepare_typed_schema()
-        self.apply_typed_change(customer_id)
+        customer_id, _, contract, _ = self.prepare_typed_schema()
         contract["target"]["expected"]["touched_at"] = "2026-10-31T11:30:00"
-        # A changed contract cannot reuse a signed baseline.
+        before = capture_postgres(READER, contract, KEY, now=1000)
+        self.apply_typed_change(customer_id)
         with self.assertRaises(EffectError):
             reconcile_postgres(READER, contract, before, KEY, now=1001)
 
