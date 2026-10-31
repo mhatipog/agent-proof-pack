@@ -87,6 +87,6 @@ For programmatic execution gating, import `run_guarded` from [`agentproof.gate`]
 
 A useful first engagement: 10–50 sanitized golden test cases; explicit business invariants and grants; separate expected/actual target-state reading; human escalation for risky changes; and a CI pack that reruns after each agent upgrade. Avoid sending real customer data in public issues.
 
-Interested in piloting? [Open a discussion issue](https://github.com/mhatipog/agent-proof-pack/issues/new) describing the *kind* of workflow, not sensitive examples.
+Interested in piloting? [See the field-pilot offer](docs/FIELD_PILOT.md) and [submit a privacy-safe pilot request](https://github.com/mhatipog/agent-proof-pack/issues/new?template=pilot.yml). Describe the *kind* of workflow, not sensitive examples.
 
 **Status:** research / MVP, not a certified assurance product. This project is independent of any specific model or agent framework.
