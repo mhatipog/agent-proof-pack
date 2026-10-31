@@ -137,8 +137,15 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
 def capture_postgres(conninfo: str, contract: dict, key: str, *,
                      schema: str = 'public', now: int | None = None) -> dict:
     _validate_contract(contract, backend='postgresql')
-    return capture(None, contract, key, now=now, backend='postgresql',
-                   reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema))
+    observed = capture(None, contract, key, now=now, backend='postgresql',
+                       reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema))
+    # Refuse malformed typed expectations *before* an agent action is attempted.
+    target = contract['target']
+    types = observed['tables'][target['table']]['column_types']
+    normalize_pg_value(target['key'], types[target['key_column']], from_contract=True)
+    for column, value in target['expected'].items():
+        normalize_pg_value(value, types[column], from_contract=True)
+    return observed
 
 
 def reconcile_postgres(conninfo: str, contract: dict, before: dict, key: str, *,
