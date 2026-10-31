@@ -19,7 +19,8 @@ from typing import Any
 
 from .engine import canonical, digest
 
-SCHEMA = 'agent-proof-pack/sqlite-effect-contract/v1'
+SCHEMA = 'agent-proof-pack/effect-contract/v2'
+LEGACY_SCHEMA = 'agent-proof-pack/sqlite-effect-contract/v1'
 SNAPSHOT_SCHEMA = 'agent-proof-pack/effect-snapshot/v2'
 PREDICATE_TYPE = 'https://github.com/mhatipog/agent-proof-pack/blob/main/docs/PROOF_OF_EFFECT.md#predicate-v1'
 IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
@@ -43,7 +44,7 @@ def _secret(key: str) -> bytes:
 def _validate_contract(contract: dict) -> None:
     if not isinstance(contract, dict) or set(contract) != {'schema', 'id', 'watch_tables', 'target'}:
         raise EffectError('invalid contract schema or fields')
-    if contract['schema'] != SCHEMA or not isinstance(contract['id'], str) or not IDENT.fullmatch(contract['id']):
+    if contract['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(contract['id'], str) or not IDENT.fullmatch(contract['id']):
         raise EffectError('invalid contract identity')
     tables = contract['watch_tables']
     if not isinstance(tables, list) or not (1 <= len(tables) <= MAX_TABLES) or len(set(tables)) != len(tables):
