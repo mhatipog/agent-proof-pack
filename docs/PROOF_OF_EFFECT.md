@@ -2,7 +2,7 @@
 
 **A tool returning success does not establish that the business operation was correct.**
 
-This experimental SQLite witness inspects the actual system of record independently of the agent. It checks the intended value and detects unauthorized changes to other rows, columns and watched tables, including inserts/deletes. It does not execute the agent's SQL.
+This experimental SQLite/PostgreSQL witness inspects the actual system of record independently of the agent. It checks the intended value and detects unauthorized changes to other rows, columns and watched tables, including inserts/deletes. It does not execute the agent's SQL.
 
 ## Run three real database scenarios
 
@@ -34,7 +34,7 @@ python -m agentproof.effect_cli verify-witness \
   --receipt effect-receipt.json --key-env AGENTPROOF_WITNESS_KEY
 ```
 
-The snapshot expires after 600 seconds. The verifier refuses tampered snapshots, changed contracts, missing target rows, wrong values, no-ops when a mutation was required, extra changes to the same row, any change to another watched row/table, schema differences, and unavailable reads. Output files are created exclusively rather than overwritten.
+The current signed before-snapshot format is `agent-proof-pack/effect-snapshot/v2` and binds both the exact contract and the observer backend; existing SQLite v1 contracts remain accepted. Snapshots from one backend cannot be replayed as the other. The snapshot expires after 600 seconds. The verifier refuses tampered snapshots, changed contracts, missing target rows, wrong values, no-ops when a mutation was required, extra changes to the same row, any change to another watched row/table, schema differences, and unavailable reads. Output files are created exclusively rather than overwritten.
 
 ## Predicate v1 — reuse existing standards
 
@@ -42,7 +42,7 @@ The output includes an [in-toto Statement v1](https://github.com/in-toto/attesta
 
 `https://github.com/mhatipog/agent-proof-pack/blob/main/docs/PROOF_OF_EFFECT.md#predicate-v1`
 
-Its predicate schema is `agent-proof-pack/effect-predicate/v1` with contract/before/after digests, exact check results, changed-row and changed-cell counts, watched table names and explicit limitations. Raw row values/identifiers are not emitted. The sibling `witness_hmac_sha256` authenticates the statement locally; **this is not itself a DSSE signature**.
+Its predicate schema is `agent-proof-pack/effect-predicate/v1` with contract/backend/before/after digests, exact check results, changed-row and changed-cell counts, watched table names and explicit limitations. Raw row values/identifiers are not emitted. The sibling `witness_hmac_sha256` authenticates the statement locally; **this is not itself a DSSE signature**.
 
 The [trusted synthetic GitHub workflow](../.github/workflows/effect-attestation.yml) uses existing [actions/attest](https://github.com/actions/attest) to publish Sigstore-backed attestation of a demo receipt. The signature establishes the GitHub workflow identity and artifact integrity, **not that a customer's database was correct**.
 
@@ -55,8 +55,8 @@ The [trusted synthetic GitHub workflow](../.github/workflows/effect-attestation.
 
 ## What it cannot prove
 
-`verified` means only that this **operator-defined outcome contract** held for the **explicitly watched SQLite tables** during the observed interval. It does not prove that an agent caused the change. Another actor could modify the same database, and a change made and reversed between checkpoints can go unnoticed. Unwatched tables, external provider side effects, and agent bypasses remain outside scope.
+`verified` means only that this **operator-defined outcome contract** held for the **explicitly watched SQLite or PostgreSQL tables** during the observed interval. It does not prove that an agent caused the change. Another actor could modify the same database, and a change made and reversed between checkpoints can go unnoticed. Unwatched tables, external provider side effects, and agent bypasses remain outside scope.
 
-Maximum scope: eight tables, 10,000 rows per table, 200,000 cells total, 1 MB/value. Every watched table needs a single declared primary key. For large or high-write workloads, replace whole-table observations with CDC or read-only provider projections. This version has no durable replay ledger, production IAM isolation or deletion-resistant evidence storage.
+Maximum scope: eight tables, 10,000 rows per table, 200,000 cells total, 1 MB/value. Every watched table needs a single declared primary key. PostgreSQL observations run in a read-only repeatable-read transaction with a separately restricted database role; RLS-enabled tables are refused. The checker now fingerprints schema indexes/triggers as well as columns in both backends. For large or high-write workloads, replace whole-table observations with CDC or read-only provider projections. This version has no durable replay ledger, production IAM isolation or deletion-resistant evidence storage.
 
 This is a reusable reference implementation and a concrete improvement in outcome verification — **not** an industry-first claim or a production security certification.
