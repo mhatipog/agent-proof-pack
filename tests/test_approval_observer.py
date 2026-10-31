@@ -9,7 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from agentproof.approval import ApprovalError, issue, validate
+from agentproof.approval import ApprovalError, issue, validate, verify_outcome
 from agentproof.attest import ObservationError, observe_files
 from agentproof.terraform_guard import apply_saved_plan, saved_plan_sha256
 
@@ -147,6 +147,27 @@ class ExecutionBoundaryTests(unittest.TestCase):
             self.assertEqual(result["state"], "verified")
             self.assertEqual(calls, ["show", "apply"])
             self.assertTrue(result["executed"])
+
+    def test_authenticated_receipt_detects_later_tampering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = root / "saved.tfplan"
+            plan.write_bytes(b"safe-plan-bytes")
+            a = issue(plan_sha256=saved_plan_sha256(plan), policy=POLICY,
+                      expectations=EXPECTED, environment="sandbox",
+                      approver="test-reviewer", key=SECRET)
+            def fake_run(args, **kwargs):
+                if args[1] == "show":
+                    return subprocess.CompletedProcess(args, 0, json.dumps(SAFE).encode(), b"")
+                (root / "proof.txt").write_bytes(PAYLOAD)
+                return subprocess.CompletedProcess(args, 0)
+            with patch("agentproof.terraform_guard.subprocess.run", side_effect=fake_run):
+                result = apply_saved_plan(plan, POLICY, approval=a, approval_key=SECRET,
+                    environment="sandbox", expectations=EXPECTED, observe_root=root)
+            self.assertTrue(verify_outcome(result, SECRET))
+            self.assertFalse(verify_outcome(result, "some-other-key-that-is-very-long-and-incorrect"))
+            result["state"] = "postcondition_failed"
+            self.assertFalse(verify_outcome(result, SECRET))
 
     def test_invalid_approval_blocks_before_terraform(self):
         with tempfile.TemporaryDirectory() as tmp:
