@@ -9,7 +9,7 @@ from agentproof.effect import EffectError, capture, reconcile, verify_witness
 
 KEY = 'separate-verifier-only-reproducible-test-key-2026'
 CONTRACT = {
-    'schema': 'agent-proof-pack/sqlite-effect-contract/v1',
+    'schema': 'agent-proof-pack/effect-contract/v2',
     'id': 'crm_won', 'watch_tables': ['customers', 'invoices'],
     'target': {'table': 'customers', 'key_column': 'id', 'key': 'C-42',
                'expected': {'status': 'won'}, 'allowed_columns': ['status'],
@@ -150,6 +150,37 @@ class EffectTests(unittest.TestCase):
         contract['watch_tables'].append('broken')
         with self.assertRaises(EffectError):
             capture(self.db, contract, KEY, now=1000)
+
+    def test_trigger_schema_change_is_observed(self):
+        self.mutate('CREATE TRIGGER audit_guard AFTER UPDATE ON customers '
+                    'BEGIN SELECT 1; END')
+        self.mutate('UPDATE customers SET status=? WHERE id=?', ('won', 'C-42'))
+        self.assertFalse(self.is_pass(self.proof()))
+
+    def test_index_change_is_observed(self):
+        self.mutate('CREATE INDEX ix_invoice_amount ON invoices(amount)')
+        self.mutate('UPDATE customers SET status=? WHERE id=?', ('won', 'C-42'))
+        self.assertFalse(self.is_pass(self.proof()))
+
+    def test_expected_value_must_actually_transition(self):
+        # Before snapshot already has the desired status; changing only
+        # another allowed column is not evidence status was updated.
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE customers SET status='won' WHERE id='C-42'")
+        contract = copy.deepcopy(CONTRACT)
+        contract['target']['allowed_columns'].append('owner')
+        initial = capture(self.db, contract, KEY, now=1000)
+        self.mutate("UPDATE customers SET owner='eve' WHERE id='C-42'")
+        result = reconcile(self.db, contract, initial, KEY, now=1001)
+        self.assertFalse(self.is_pass(result))
+
+    def test_existing_v1_contract_compatibility(self):
+        contract = copy.deepcopy(CONTRACT)
+        contract['schema'] = 'agent-proof-pack/sqlite-effect-contract/v1'
+        baseline = capture(self.db, contract, KEY, now=1000)
+        self.mutate("UPDATE customers SET status='won' WHERE id='C-42'")
+        proof = reconcile(self.db, contract, baseline, KEY, now=1001)
+        self.assertTrue(self.is_pass(proof))
 
     def test_readonly_does_not_mutate_db(self):
         with sqlite3.connect(self.db) as c:

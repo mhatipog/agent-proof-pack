@@ -1,4 +1,4 @@
-"""Small standalone CLI for the independent SQLite effect witness."""
+"""Standalone CLI for read-only SQLite/PostgreSQL effect witnesses."""
 import argparse
 import json
 import os
@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .effect import EffectError, capture, reconcile, verify_witness
+from .postgres_effect import capture_postgres, reconcile_postgres
 
 
 def _json(path):
@@ -34,7 +35,7 @@ def _secret(name):
 def demo(mode='correct'):
     """Real, isolated database update; no agents, cloud accounts or secrets."""
     contract = {
-        'schema': 'agent-proof-pack/sqlite-effect-contract/v1', 'id': 'crm_status',
+        'schema': 'agent-proof-pack/effect-contract/v2', 'id': 'crm_status',
         'watch_tables': ['customers', 'invoices'],
         'target': {'table': 'customers', 'key_column': 'id', 'key': 'C-42',
                    'expected': {'status': 'won'}, 'allowed_columns': ['status'],
@@ -64,7 +65,10 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     for action in ('capture', 'reconcile'):
         p = sub.add_parser(action)
-        p.add_argument('--db', required=True)
+        p.add_argument('--backend', choices=['sqlite', 'postgresql'], default='sqlite')
+        p.add_argument('--db', help='SQLite path (for SQLite backend only)')
+        p.add_argument('--dsn-env', help='environment variable name containing PostgreSQL read-only DSN')
+        p.add_argument('--schema', default='public', help='explicit PostgreSQL schema')
         p.add_argument('--contract', required=True)
         p.add_argument('--key-env', required=True)
         p.add_argument('--output', required=True)
@@ -84,10 +88,24 @@ def main(argv=None):
             return 0 if good else 4
         if args.command == 'demo':
             result = demo(args.mode)
-        elif args.command == 'capture':
-            result = capture(Path(args.db), _json(args.contract), _secret(args.key_env))
-        else:
-            result = reconcile(Path(args.db), _json(args.contract), _json(args.before), _secret(args.key_env))
+        elif args.command in ('capture', 'reconcile'):
+            contract = _json(args.contract)
+            key = _secret(args.key_env)
+            if args.backend == 'postgresql':
+                if args.db or not args.dsn_env or not os.environ.get(args.dsn_env):
+                    raise EffectError('PostgreSQL mode needs --dsn-env with a protected read-only DSN; not --db')
+                dsn = os.environ[args.dsn_env]
+                if args.command == 'capture':
+                    result = capture_postgres(dsn, contract, key, schema=args.schema)
+                else:
+                    result = reconcile_postgres(dsn, contract, _json(args.before), key, schema=args.schema)
+            else:
+                if not args.db or args.dsn_env:
+                    raise EffectError('SQLite mode requires --db only')
+                if args.command == 'capture':
+                    result = capture(Path(args.db), contract, key)
+                else:
+                    result = reconcile(Path(args.db), contract, _json(args.before), key)
         if getattr(args, 'output', None):
             _write(args.output, result)
         else:
