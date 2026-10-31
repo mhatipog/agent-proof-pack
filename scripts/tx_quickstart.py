@@ -58,6 +58,7 @@ def contract(action: uuid.UUID, customer_id: str) -> dict:
 def demo(*, show_receipt: bool = False) -> dict:
     try:
         import psycopg
+        from psycopg import sql
     except ImportError as exc:
         raise RuntimeError("Install the PostgreSQL extra: pip install -e '.[postgresql]'") from exc
     token = uuid.uuid4().hex[:12]
@@ -80,8 +81,10 @@ def demo(*, show_receipt: bool = False) -> dict:
         reader = f"postgresql://effect_reader:{reader_password}@127.0.0.1:{port}/agentproof_demo"
         wait_for_database(admin)
         with psycopg.connect(admin) as conn:
-            conn.execute("CREATE ROLE effect_actor LOGIN PASSWORD %s" % psycopg.sql.Literal(actor_password).as_string(conn))
-            conn.execute("CREATE ROLE effect_reader LOGIN PASSWORD %s" % psycopg.sql.Literal(reader_password).as_string(conn))
+            conn.execute(sql.SQL("CREATE ROLE effect_actor LOGIN PASSWORD {}").format(
+                sql.Literal(actor_password)))
+            conn.execute(sql.SQL("CREATE ROLE effect_reader LOGIN PASSWORD {}").format(
+                sql.Literal(reader_password)))
             conn.execute("GRANT CONNECT ON DATABASE agentproof_demo TO effect_actor, effect_reader")
             conn.execute("GRANT USAGE ON SCHEMA public TO effect_actor, effect_reader")
             conn.execute("CREATE TABLE public.customers(id text PRIMARY KEY, status text NOT NULL, owner text NOT NULL)")
