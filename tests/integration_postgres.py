@@ -18,7 +18,7 @@ ADMIN = os.environ.get('AGENTPROOF_TEST_ADMIN_DSN')
 READER = os.environ.get('AGENTPROOF_TEST_READER_DSN')
 KEY = 'test-only-separated-observer-key-2026-very-long'
 CONTRACT = {
-    'schema': 'agent-proof-pack/sqlite-effect-contract/v1',
+    'schema': 'agent-proof-pack/effect-contract/v2',
     'id': 'customer_status', 'watch_tables': ['customers', 'invoices'],
     'target': {
         'table': 'customers', 'key_column': 'id', 'key': 'C-42',
