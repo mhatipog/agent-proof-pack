@@ -14,7 +14,7 @@ This reuses the existing [transaction effect gate](TRANSACTION_GATE.md), not a n
 
 All are written in the **same PostgreSQL transaction** as the business UPDATE. If the transaction aborts, the row, both evidence records and approval consumption roll back. The guarded function refuses to return success unless the AFTER-trigger event exists. An independent SELECT-only account observes the three records in a single read-only `REPEATABLE READ` snapshot. It rejects missing, unconsumed, mismatched role/key/status, or different-transaction evidence.
 
-The same guard runs both BEFORE and AFTER the UPDATE, verifying the final row after other BEFORE triggers have run. A trigger that silently rewrites the approved status aborts the whole transaction instead of producing misleading proof.
+The same guard runs both BEFORE and AFTER the UPDATE, verifying the final row after other BEFORE triggers have run. A trigger that silently rewrites the approved status aborts the whole transaction instead of producing misleading proof. This relies on PostgreSQL's documented [final-row AFTER-trigger visibility](https://www.postgresql.org/docs/current/trigger-definition.html), [transactional trigger rollback](https://www.postgresql.org/docs/current/trigger-definition.html), and [repeatable-read snapshot behavior](https://www.postgresql.org/docs/current/transaction-iso.html).
 
 The restricted agent cannot call the guard's owner functions except the authorized action, mint grants, or insert/alter the evidence tables. Direct customer and invoice writes are blocked by sandbox grants/triggers. The operator controls the expected contract and the verifier key separately.
 
