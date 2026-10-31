@@ -19,7 +19,9 @@ In July 2025, a Replit agent deleted live application data. Replit later explain
 
 Instead, [the reproducible Chinook incident lab](docs/CHINOOK_INCIDENT_LAB.md) imports a commit-pinned upstream PostgreSQL commerce database (59 customers, 2,240 invoice lines) into an ephemeral database. It tests three separately credentialed roles: a staging agent unable to access production, a production writer with narrow privileges, and an independent reader. Destructive operations and frozen writes are refused; an unauthorized invoice-line change in the same transaction aborts an otherwise permitted customer update.
 
-The [configurable single-row transaction gate](docs/GENERIC_TRANSACTION_GATE.md) also runs on Chinook's actual `customer.email` and `invoice_line` tables, not just the earlier hard-coded fixture. It uses one-use, role-bound grants with revocation and rollback, then checks the committed result separately. [Inspect the PostgreSQL tests](.github/workflows/chinook-incident.yml).
+The [configurable single-row transaction gate](docs/GENERIC_TRANSACTION_GATE.md) also runs on Chinook's actual `customer.email` and `invoice_line` tables, not just the earlier hard-coded fixture. It uses one-use, role-bound grants with revocation and rollback, then checks the committed result separately.
+
+**Agent integration:** `agent-guarded apply --action-id <approved-uuid>` accepts only an operator-issued ID—not SQL or a policy change. A separate process runs `agent-guarded observe` using SELECT-only credentials and an HMAC key; `agent-guarded check` requires the exact operator contract and a recent, verified receipt. The gate compares the entire final row after immediate triggers, refusing unexpected changes made by later BEFORE triggers. See the [bounded setup](docs/GENERIC_TRANSACTION_GATE.md). [Inspect the PostgreSQL tests](.github/workflows/chinook-incident.yml).
 
 **Scope:** verified incident *class* on an independent sample database, not a customer deployment or a reconstruction of Replit's exact failure. Enforcement relies fundamentally on PostgreSQL permissions and transactions. A database owner can bypass the guard.
 

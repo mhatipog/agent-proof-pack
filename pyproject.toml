@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-proof-pack"
-version = "0.6.0"
+version = "0.7.0"
 description = "Independent outcome verification for AI agent database writes: SQLite, PostgreSQL and in-toto evidence"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +37,7 @@ Source = "https://github.com/mhatipog/agent-proof-pack"
 [project.scripts]
 agent-proof = "agentproof.cli:main"
 agent-effect = "agentproof.effect_cli:main"
+agent-guarded = "agentproof.generic_cli:main"
 agent-tx-effect = "agentproof.tx_effect:main"
 agent-tx-verify = "agentproof.tx_receipt_verify:main"
 

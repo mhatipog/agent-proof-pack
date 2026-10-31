@@ -52,7 +52,83 @@ An operator can enforce a **code freeze even after granting permission** by sett
 
 An actor's `SESSION_USER` is checked server-side, and the temporary approval context is stored in a protected table with the real PostgreSQL backend PID and transaction ID. It **cannot** be authorized by spoofing a `SET LOCAL` session parameter. The grant is locked for concurrent calls and its consumption rolls back if the operation fails.
 
-The example only works if the operator's exact original value matches the database. Passing the same grant again fails. The functions use properly quoted SQL identifiers, bound values and a hard-coded supported type allowlist.
+The example only works if the operator's exact original value matches the database. Passing the same grant again fails. The functions use properly quoted SQL identifiers, bound values and a hard-coded supported type allowlist. The transaction gate also compares the complete persisted row after immediate triggers to defend against later BEFORE-trigger rewrites.
+
+## Agent-facing tool and independent witness
+
+The agent does not receive SQL write credentials, arbitrary SQL execution or an
+authorization-issuing API. A trusted operator provisions the grant separately.
+The only actor-side tool input is the already approved UUID. The actor command reads credentials from exactly one fixed `AGENTPROOF_ACTOR_DSN` variable; the agent cannot choose another environment secret:
+
+```sh
+pip install -e '.[postgresql]'
+# Set these in separately protected processes, NOT in the same agent shell:
+export AGENTPROOF_ACTOR_DSN='postgresql://incident_prod_actor:...@host/db'
+agent-guarded apply \
+  --action-id 11111111-1111-4111-8111-111111111111
+# "submitted_unverified" is NOT evidence of a correct final outcome.
+```
+
+In a **separate verifier** with SELECT-only access to the protected grant,
+committed-action record and the exact target table, and a verifier-only HMAC key:
+
+```sh
+export AGENTPROOF_WITNESS_DSN='postgresql://incident_witness_reader:...@host/db'
+export AGENTPROOF_WITNESS_KEY='<independent-random-32-plus-byte-secret>'
+agent-guarded observe \
+  --contract approved-contract.json \
+  --dsn-env AGENTPROOF_WITNESS_DSN \
+  --key-env AGENTPROOF_WITNESS_KEY \
+  --output authenticated-result.json
+agent-guarded check --receipt authenticated-result.json \
+  --contract approved-contract.json \
+  --key-env AGENTPROOF_WITNESS_KEY
+# exit 0 only for a recent, authenticated VERIFIED result for this exact contract
+```
+
+Operator-owned contract (example only; its old value must be read from the
+trusted real database, and its UUID must match the protected grant):
+
+```json
+{
+  "schema": "agent-proof-pack/generic-transaction-contract/v1",
+  "id": "customer_email_update",
+  "action_id": "11111111-1111-4111-8111-111111111111",
+  "executor_role": "incident_prod_actor",
+  "table": "public.customer",
+  "key_column": "customer_id",
+  "key_value": "1",
+  "update_column": "email",
+  "old_value": "old-value-from-trusted-read@example.invalid",
+  "new_value": "approved@local.invalid"
+}
+```
+
+The witness reads protected grant and committed-action records and the *actual
+current row* in one PostgreSQL read-only repeatable-read transaction. It checks
+the exact table, authenticated actor role, primary key, authorized transition,
+consumption and final field value. It signs a value-redacted in-toto-shaped
+statement. A later receipt check binds it to the independently supplied contract and a recent observation (default 300 seconds); an old, cross-action or signed-failure receipt does not authorize success. A later legitimate modification can cause a conservative mismatch;
+it does not guarantee historical row state forever.
+
+**Do not put witness credentials, signing key, or trusted contract in an agent
+environment.** The API is useful only when an external operator has provisioned
+the database roles, trigger enrollment and one-use grant. The executable test
+runs against real Chinook data, but is not a real LLM agent/customer pilot.
+
+## Repaired trigger-order bypass
+
+PostgreSQL runs multiple BEFORE triggers alphabetically. Previously,
+`agentproof_exact_row` could approve a tuple and a later `zz_*` BEFORE trigger
+could rewrite the approved value or a different column. The generic gate now
+captures the *full original row under lock*, runs the change, and re-reads the
+*full actual row after all immediate triggers*; any unexpected difference fails
+the same transaction and rolls back the grant and committed-action record.
+Regression tests intentionally install both forms of malicious later trigger.
+
+This mitigation cannot guarantee the absence of effects in **unenrolled tables**,
+external HTTP actions, deferred out-of-transaction work, or an adversarial
+database owner/superuser. Those remain explicitly outside scope.
 
 ## Actual external-schema tests
 

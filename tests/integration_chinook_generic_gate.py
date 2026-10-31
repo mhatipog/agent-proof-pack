@@ -16,7 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 
 from agentproof.postgres_effect import capture_postgres, reconcile_postgres
-from agentproof.effect import verify_witness
+from agentproof.effect import verify_witness, EffectError
+from agentproof.generic_cli import apply_approved, observe_approved, verify_outcome
 
 ADMIN = os.getenv("AGENTPROOF_CHINOOK_ADMIN_DSN")
 WRITER = os.getenv("AGENTPROOF_CHINOOK_WRITER_DSN")
@@ -63,7 +64,7 @@ class GenericChinookGateTests(unittest.TestCase):
             c.execute("GRANT USAGE ON SCHEMA agentproof_generic TO incident_prod_actor")
             c.execute("GRANT EXECUTE ON FUNCTION agentproof_generic.apply_text_change(uuid) TO incident_prod_actor")
             c.execute("GRANT USAGE ON SCHEMA agentproof_generic TO incident_witness_reader")
-            c.execute("GRANT SELECT ON agentproof_generic.committed TO incident_witness_reader")
+            c.execute("GRANT SELECT ON agentproof_generic.committed, agentproof_generic.grants TO incident_witness_reader")
 
     def setUp(self):
         # Only the trusted owner can temporarily disable these fixture guards;
@@ -139,6 +140,43 @@ class GenericChinookGateTests(unittest.TestCase):
         self.assertEqual(self.committed(a)[:4],
                          ("incident_prod_actor", "1", self.original_email, TARGET))
 
+    def generic_contract(self, action):
+        return {
+            "schema": "agent-proof-pack/generic-transaction-contract/v1",
+            "id": "chinook_email_change", "action_id": str(action),
+            "executor_role": "incident_prod_actor",
+            "table": "public.customer", "key_column": "customer_id",
+            "key_value": "1", "update_column": "email",
+            "old_value": self.original_email, "new_value": TARGET,
+        }
+
+    def test_real_agent_tool_only_accepts_grant_uuid_and_witness_checks_actual_row(self):
+        action = self.grant()
+        execution = apply_approved(WRITER, str(action))
+        self.assertEqual(execution["state"], "submitted_unverified")
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        self.assertEqual(evidence["statement"]["predicate"]["status"], "verified")
+        self.assertTrue(verify_outcome(evidence, KEY))
+        self.assertEqual(self.state(), (TARGET, self.original_price))
+        self.assertTrue(self.consumed(action))
+
+    def test_witness_cannot_call_missing_grant_verified(self):
+        action = self.grant()
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        self.assertEqual(evidence["statement"]["predicate"]["status"], "failed")
+        self.assertTrue(verify_outcome(evidence, KEY))
+
+    def test_tampered_witness_receipt_is_detected(self):
+        action = self.grant()
+        apply_approved(WRITER, str(action))
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        evidence["statement"]["predicate"]["status"] = "failed"
+        self.assertFalse(verify_outcome(evidence, KEY))
+
+    def test_agent_tool_rejects_arbitrary_sql_as_action_id(self):
+        with self.assertRaises(EffectError):
+            apply_approved(WRITER, "UPDATE public.invoice_line SET unit_price=0")
+
     def test_direct_write_is_refused_even_if_actor_has_column_update_grant(self):
         with self.assertRaises(psycopg.Error):
             with psycopg.connect(WRITER) as c:
@@ -213,6 +251,64 @@ class GenericChinookGateTests(unittest.TestCase):
                 c.execute("DROP FUNCTION public.chinook_bad_invoice()")
         self.assertEqual(self.act(action), "applied")
         self.assertEqual(self.proof(), "verified")
+
+    def test_later_before_trigger_cannot_rewrite_unapproved_column(self):
+        # Postgres executes same-event BEFORE triggers alphabetically. This
+        # trigger runs AFTER the agentproof_exact_row guard saw the original NEW.
+        with psycopg.connect(ADMIN) as c:
+            c.execute("""
+                CREATE FUNCTION public.zz_effect_rewrite() RETURNS trigger
+                LANGUAGE plpgsql AS $body_rewrite$
+                BEGIN
+                  NEW.first_name := 'UNAUTHORIZED';
+                  RETURN NEW;
+                END; $body_rewrite$;
+            """)
+            c.execute("""
+                CREATE TRIGGER zz_effect_rewrite BEFORE UPDATE ON public.customer
+                FOR EACH ROW EXECUTE FUNCTION public.zz_effect_rewrite();
+            """)
+        action = self.grant()
+        try:
+            with self.assertRaises(psycopg.Error):
+                self.act(action)
+            self.assertEqual(self.state(), (self.original_email, self.original_price))
+            self.assertFalse(self.consumed(action))
+            self.assertIsNone(self.committed(action))
+            with psycopg.connect(READER) as c:
+                first_name = c.execute(
+                    "SELECT first_name FROM public.customer WHERE customer_id=1"
+                ).fetchone()[0]
+            self.assertNotEqual(first_name, "UNAUTHORIZED")
+        finally:
+            with psycopg.connect(ADMIN) as c:
+                c.execute("DROP TRIGGER zz_effect_rewrite ON public.customer")
+                c.execute("DROP FUNCTION public.zz_effect_rewrite()")
+
+    def test_later_before_trigger_cannot_rewrite_approved_value(self):
+        with psycopg.connect(ADMIN) as c:
+            c.execute("""
+                CREATE FUNCTION public.zz_effect_wrong_value() RETURNS trigger
+                LANGUAGE plpgsql AS $body_email$
+                BEGIN
+                  NEW.email := 'WRONG@local.invalid';
+                  RETURN NEW;
+                END; $body_email$;
+            """)
+            c.execute("""
+                CREATE TRIGGER zz_effect_wrong_value BEFORE UPDATE ON public.customer
+                FOR EACH ROW EXECUTE FUNCTION public.zz_effect_wrong_value();
+            """)
+        action = self.grant()
+        try:
+            with self.assertRaises(psycopg.Error):
+                self.act(action)
+            self.assertEqual(self.state(), (self.original_email, self.original_price))
+            self.assertFalse(self.consumed(action))
+        finally:
+            with psycopg.connect(ADMIN) as c:
+                c.execute("DROP TRIGGER zz_effect_wrong_value ON public.customer")
+                c.execute("DROP FUNCTION public.zz_effect_wrong_value()")
 
     def test_other_customer_change_inside_trigger_rolls_back(self):
         with psycopg.connect(ADMIN) as c:

@@ -75,10 +75,10 @@ BEGIN
     END IF;
     old_record := pg_catalog.to_jsonb(OLD);
     new_record := pg_catalog.to_jsonb(NEW);
-    IF old_record ->> approval.key_column <> approval.key_value
-       OR new_record ->> approval.key_column <> approval.key_value
-       OR old_record ->> approval.update_column <> approval.old_value
-       OR new_record ->> approval.update_column <> approval.new_value
+    IF old_record ->> approval.key_column IS DISTINCT FROM approval.key_value
+       OR new_record ->> approval.key_column IS DISTINCT FROM approval.key_value
+       OR old_record ->> approval.update_column IS DISTINCT FROM approval.old_value
+       OR new_record ->> approval.update_column IS DISTINCT FROM approval.new_value
        OR (old_record - approval.update_column)
             IS DISTINCT FROM (new_record - approval.update_column) THEN
         RAISE EXCEPTION 'effect gate: record changed beyond exact approved effect'
@@ -136,6 +136,8 @@ DECLARE
     schema_name text;
     relation_name text;
     changed integer;
+    before_image jsonb;
+    after_image jsonb;
     is_pk boolean;
     is_text boolean;
 BEGIN
@@ -192,6 +194,19 @@ BEGIN
     INSERT INTO agentproof_generic.active(backend_pid, txid, action_id)
     VALUES (pg_catalog.pg_backend_pid(), pg_catalog.txid_current(), request_id);
 
+    -- Capture the entire authoritative row under lock BEFORE running any
+    -- user-installed BEFORE triggers. A later BEFORE trigger can otherwise
+    -- change NEW after guard_row() accepted it (alphabetical trigger order).
+    EXECUTE pg_catalog.format(
+        'SELECT pg_catalog.to_jsonb(t) FROM %I.%I AS t '
+        'WHERE %I::text = $1 AND %I::text = $2 FOR UPDATE',
+        schema_name, relation_name, approval.key_column, approval.update_column)
+       INTO before_image USING approval.key_value, approval.old_value;
+    IF before_image IS NULL THEN
+        RAISE EXCEPTION 'effect gate: missing or stale starting row'
+            USING ERRCODE = '42501';
+    END IF;
+
     EXECUTE pg_catalog.format(
         'UPDATE %I.%I SET %I = $1 WHERE %I::text = $2 AND %I::text = $3',
         schema_name, relation_name, approval.update_column, approval.key_column,
@@ -200,6 +215,24 @@ BEGIN
     GET DIAGNOSTICS changed = ROW_COUNT;
     IF changed <> 1 THEN
         RAISE EXCEPTION 'effect gate: stale or missing target row'
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- Re-read the actual stored tuple after ALL immediate BEFORE and AFTER
+    -- triggers of the UPDATE. The authorization covers exactly one field;
+    -- a trigger rewriting any other field (or the approved value) is refused.
+    -- Do this BEFORE clearing the protected transaction context, consuming
+    -- the one-time grant, or recording a committed action.
+    EXECUTE pg_catalog.format(
+        'SELECT pg_catalog.to_jsonb(t) FROM %I.%I AS t WHERE %I::text = $1',
+        schema_name, relation_name, approval.key_column)
+       INTO after_image USING approval.key_value;
+    IF after_image IS NULL
+       OR (before_image - approval.update_column)
+            IS DISTINCT FROM (after_image - approval.update_column)
+       OR after_image ->> approval.update_column IS DISTINCT FROM approval.new_value
+       OR before_image ->> approval.update_column IS DISTINCT FROM approval.old_value THEN
+        RAISE EXCEPTION 'effect gate: final row differs from exact approved transition'
             USING ERRCODE = '42501';
     END IF;
 
