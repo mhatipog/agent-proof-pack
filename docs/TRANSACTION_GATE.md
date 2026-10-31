@@ -19,6 +19,8 @@ The restricted actor can invoke exactly one `SECURITY DEFINER` function with tha
 
 The function locks the protected grant row and creates a private action context bound to PostgreSQL's **backend PID and current transaction ID**. The context lives in a table inaccessible to the actor; it is *not* a spoofable `SET LOCAL` session variable. During the approved update, a row trigger allows only the exact status transition for the exact record; all other customer mutations and **all invoice mutations** are refused. Any violation raises an exception and PostgreSQL rolls the entire transaction back, including the approved update and one-time grant consumption.
 
+A protected `agentproof_guard.committed_actions` row is written in the **same transaction** as the approved mutation. The independent reader can observe this record only after the transaction commits, with the action ID, authenticated database role, PostgreSQL transaction ID and exact approved transition. If a later statement in the caller's same transaction fails, **the outcome row also rolls back**. This supplies useful causal linkage to the controlled entry point, although it is not an externally signed or append-only ledger against the database administrator.
+
 This is intentionally a **customer-status-only demonstration**. Blocking all invoice mutations would obviously be unsuitable for a functioning production invoice workflow. A production gate needs operator-defined, multi-table contracts, verified role ownership, transaction-scoped audit receipts, lifecycle management and external integration.
 
 ## Real reproduction
@@ -34,9 +36,9 @@ The tests verify:
 1. One authorized status change commits and an independent read-only witness verifies it.
 2. Direct SQL writes from the actor are refused by grants.
 3. Forging a session variable cannot bypass the gate, even when direct UPDATE permission is temporarily added in the test.
-4. Missing, expired, stale, wrong-role and replayed grants fail closed.
+4. Missing, expired, stale, wrong-role and replayed grants fail closed, including simultaneous callers racing for the same grant.
 5. A malicious **AFTER UPDATE trigger that changes an invoice** causes **both the customer and invoice writes to roll back**, leaving the grant reusable after the faulty trigger is removed.
-6. A malicious trigger attempting a second customer update is rejected the same way.
+6. A malicious trigger attempting a second customer update is rejected the same way. An additional unauthorized SQL statement *after the approved function returns but before the caller commits* also aborts the whole transaction.
 7. TRUNCATE and direct invoice updates fail under the sandbox restrictions.
 
 No customer databases, cloud credentials, or production systems are touched.
@@ -55,7 +57,7 @@ export AGENTPROOF_GATE_TEST_READER_DSN='postgresql://effect_reader:...@localhost
 python -m unittest discover -s tests -p integration_tx_gate.py -v
 ```
 
-The tests create and reset tables, triggers, functions, and roles. **They will modify the target database. Never point them at a production instance.** The CI workflow shows how to provision all three roles safely in an ephemeral container.
+The test class creates and resets disposable tables, triggers and functions; its GitHub Actions workflow separately provisions the database roles. **They will modify the target database. Never point them at a production instance.** The CI workflow shows how to provision all three roles safely in an ephemeral container.
 
 ## Open-source foundations and distinctions
 
@@ -74,6 +76,7 @@ This work is not a new policy engine, not a replacement for SQL privileges, and 
 
 - Any database owner, superuser, or process capable of altering the guarded tables, triggers, schema or security-definer function **can bypass** this demonstration. That is why database role ownership and migration controls matter. Tests exercise no-superuser actor.
 - Only the two named tables are monitored. Unwatched tables, external HTTP calls, outbox consumers, messages, file writes, untrusted extensions and side-effecting triggers on unguarded tables are outside scope.
+- The protected committed-action record is transactional evidence, not an externally immutable audit ledger. An administrator can modify or delete it, and the independent observer must read it using appropriately restricted credentials.
 - The issuer of grants is a separately privileged operator. The public test uses local credentials strictly in an ephemeral PostgreSQL service. Do not let an agent mint or modify its own authorization grants.
 - A permitted effect alone does not prove which human requested it. Real integration needs authenticated identity, durable review records and binding the approval to the business caller.
 - Triggers affect throughput and application behavior. Run a benchmark and review existing triggers/FKs, legitimate invoice paths and backup/rollback procedures before any production adoption.
