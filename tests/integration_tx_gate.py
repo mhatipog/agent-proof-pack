@@ -178,6 +178,57 @@ class TransactionGateTests(unittest.TestCase):
             with psycopg.connect(ADMIN) as c:
                 c.execute("REVOKE UPDATE ON public.customers FROM effect_actor")
 
+    def test_later_before_trigger_rewrite_cannot_create_false_proof(self):
+        # PostgreSQL BEFORE triggers run in name order. The approval guard
+        # originally saw a valid proposed status; this later trigger changes
+        # the final stored row. The AFTER guard must abort the entire action.
+        with psycopg.connect(ADMIN) as c:
+            c.execute("""
+              CREATE FUNCTION public.rewrite_approved_status() RETURNS trigger
+              LANGUAGE plpgsql AS $
+              BEGIN
+                NEW.status := 'lost';
+                RETURN NEW;
+              END; $;
+            """)
+            c.execute("""
+              CREATE TRIGGER zz_rewrite_status BEFORE UPDATE ON public.customers
+              FOR EACH ROW EXECUTE FUNCTION public.rewrite_approved_status();
+            """)
+        action = self.grant()
+        try:
+            with self.assertRaises(psycopg.Error):
+                self.act(action)
+            self.assertEqual(self.state(), ("open", 100))
+            self.assertFalse(self.consumed(action))
+            self.assertEqual(self.tx_witness(action)["statement"]["predicate"]["status"], "failed")
+        finally:
+            with psycopg.connect(ADMIN) as c:
+                c.execute("DROP TRIGGER zz_rewrite_status ON public.customers")
+                c.execute("DROP FUNCTION public.rewrite_approved_status()")
+
+    def test_disabled_after_evidence_trigger_fails_closed(self):
+        # This is protection against accidental misconfiguration, not a
+        # defense against a malicious table owner or superuser.
+        with psycopg.connect(ADMIN) as c:
+            c.execute("ALTER TABLE public.customers DISABLE TRIGGER agentproof_customer_effect")
+        action = self.grant()
+        try:
+            with self.assertRaises(psycopg.Error):
+                self.act(action)
+            self.assertEqual(self.state(), ("open", 100))
+            self.assertEqual(self.tx_witness(action)["statement"]["predicate"]["status"], "failed")
+        finally:
+            with psycopg.connect(ADMIN) as c:
+                c.execute("ALTER TABLE public.customers ENABLE TRIGGER agentproof_customer_effect")
+
+    def test_missing_row_evidence_fails_even_if_commit_receipt_remains(self):
+        action = self.grant()
+        self.act(action)
+        with psycopg.connect(ADMIN) as c:
+            c.execute("DELETE FROM agentproof_guard.row_effects WHERE action_id=%s", (action,))
+        self.assertEqual(self.tx_witness(action)["statement"]["predicate"]["status"], "failed")
+
     def test_unprivileged_actor_cannot_forge_effect_record(self):
         action = self.grant()
         with self.assertRaises(psycopg.Error):
