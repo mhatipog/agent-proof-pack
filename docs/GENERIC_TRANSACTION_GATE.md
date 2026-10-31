@@ -81,7 +81,9 @@ agent-guarded observe \
   --key-env AGENTPROOF_WITNESS_KEY \
   --output authenticated-result.json
 agent-guarded check --receipt authenticated-result.json \
+  --contract approved-contract.json \
   --key-env AGENTPROOF_WITNESS_KEY
+# exit 0 only for a recent, authenticated VERIFIED result for this exact contract
 ```
 
 Operator-owned contract (example only; its old value must be read from the
@@ -106,7 +108,7 @@ The witness reads protected grant and committed-action records and the *actual
 current row* in one PostgreSQL read-only repeatable-read transaction. It checks
 the exact table, authenticated actor role, primary key, authorized transition,
 consumption and final field value. It signs a value-redacted in-toto-shaped
-statement. A later legitimate modification can cause a conservative mismatch;
+statement. A later receipt check binds it to the independently supplied contract and a recent observation (default 300 seconds); an old, cross-action or signed-failure receipt does not authorize success. A later legitimate modification can cause a conservative mismatch;
 it does not guarantee historical row state forever.
 
 **Do not put witness credentials, signing key, or trusted contract in an agent
