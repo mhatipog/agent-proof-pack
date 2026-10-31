@@ -14,9 +14,9 @@ from uuid import UUID
 
 from .effect import EffectError, MAX_VALUE_BYTES
 
-_VARCHAR = re.compile(r"^(?:character varying|character)(?:\\([0-9]+\\))?$")
-_NUMERIC = re.compile(r"^numeric(?:\\([0-9]+(?:,[0-9]+)?\\))?$")
-_TIMESTAMPTZ = re.compile(r"^timestamp(?:\\([0-9]+\\))? with time zone$")
+_VARCHAR = re.compile(r"^(?:character varying|character)(?:\([0-9]+\))?$")
+_NUMERIC = re.compile(r"^numeric(?:\([0-9]+(?:,[0-9]+)?\))?$")
+_TIMESTAMPTZ = re.compile(r"^timestamp(?:\([0-9]+\))? with time zone$")
 _SIMPLE = {
     "smallint", "integer", "bigint", "real", "double precision",
     "text", "bytea",
@@ -86,7 +86,7 @@ def normalize_pg_value(value, type_name: str, *, from_contract: bool = False):
     if kind == "numeric":
         if from_contract:
             if not isinstance(value, str) or len(value) > MAX_VALUE_BYTES or not re.fullmatch(
-                    r"[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value):
+                    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value):
                 raise EffectError("numeric contract value must be a finite decimal string")
             try:
                 number = Decimal(value)
