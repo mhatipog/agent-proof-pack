@@ -28,6 +28,18 @@ One mode truly changes a synthetic CRM record. Another tries an unauthorized too
 
 [**Browse the 16 reproducible cases →**](docs/CASE_STUDY.md)
 
+### Incident-grounded controls (v0.2)
+
+**Five public incidents and security demonstrations, 16 additional simulated regression cases.** They address production data deletion, unreviewed infrastructure plans, over-scoped API tokens, private-to-public data leaks and outbound exfiltration. The tests reproduce *control scenarios*, not the actual incidents.
+
+```bash
+python -m agentproof suite --cases examples/incident_cases.json
+```
+
+New checks: `exact_grant` (principal/tool/resource/operation/environment **as a tuple**), `action_binding` (approved action SHA-256 plus unchanged target revision), `information_flow` (independently classified source → destination), and `https_origin` (exact HTTPS origin, not suffix matching). See the [source-linked incident study](docs/INCIDENT_EVIDENCE.md).
+
+**Important:** These are deterministic checks, not an enforcement proxy or production security certification. The trusted executor must enforce the decision immediately at the write boundary. Independent permissions, classified data, protected resources, network restrictions and backend idempotency are still required.
+
 ## What can it check?
 
 | Stage | Built-in invariant | Example |
