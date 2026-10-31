@@ -87,6 +87,11 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
                         WHERE t.tgrelid = %s AND NOT t.tgisinternal
                         ORDER BY t.tgname
                     """, (oid,)).fetchall()
+                    constraints = conn.execute("""
+                        SELECT conname, pg_catalog.pg_get_constraintdef(oid)
+                        FROM pg_catalog.pg_constraint
+                        WHERE conrelid = %s ORDER BY conname
+                    """, (oid,)).fetchall()
                     table_rows = {}
                     query = sql.SQL('SELECT * FROM {} ORDER BY {}').format(
                         sql.Identifier(schema, table), sql.Identifier(pk))
@@ -111,7 +116,7 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
                                 raise EffectError('watch set exceeds bounded cell count')
                     tables[table] = {
                         'primary_key': pk,
-                        'schema_sha256': digest([columns_info, indexes, triggers]),
+                        'schema_sha256': digest([columns_info, indexes, triggers, constraints]),
                         'rows': table_rows,
                     }
                 conn.execute('COMMIT')
