@@ -20,6 +20,22 @@ The restricted agent cannot call the guard's owner functions except the authoriz
 
 **The specific benefit:** two legitimately approved actions on *different customers* may overlap. Each can be verified by its own action ID even though a before/after whole-table snapshot of one action would reject the other's change. A later permitted update of the *same* customer does not erase the earlier commit proof. Neither case needs full-table observation.
 
+## Fast reproducible demo: no database setup
+
+```sh
+python -m pip install -e '.[postgresql]'
+python -m scripts.tx_quickstart
+```
+
+The demo launches a new disposable PostgreSQL 16 Docker container, provisions three roles, commits two legitimate customer updates **concurrently**, checks each action by UUID, and attempts a direct unauthorized invoice write. It independently confirms the invoice amount remains unchanged. Each outcome is evidence from the guarded transaction and separate read-only database account, not an agent claim. Docker must be available. It does not connect to any pre-existing PostgreSQL service and removes its own container after the run.
+
+To verify a saved authenticated receipt **offline**, retaining the signing secret privately:
+
+```sh
+agent-tx-verify --receipt tx-receipt.json --key-env AGENTPROOF_EFFECT_SIGN_KEY
+```
+
+Exit 0 means both authenticated and status `verified`; exit 4 means an authentic failed verdict, invalid signature or unavailable evidence. A valid HMAC authenticates only what the separately controlled witness issued; it cannot independently recheck the database without database access.
 ## Try on an isolated disposable PostgreSQL 16 server
 
 Run `tests/integration_tx_gate.py` using the existing [transaction-gate CI](../.github/workflows/transaction-effect-gate.yml) and its three PostgreSQL test roles. **This test creates and resets tables and disables fixture triggers; never point it at a production database.**
