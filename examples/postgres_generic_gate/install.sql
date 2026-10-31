@@ -75,10 +75,10 @@ BEGIN
     END IF;
     old_record := pg_catalog.to_jsonb(OLD);
     new_record := pg_catalog.to_jsonb(NEW);
-    IF old_record ->> approval.key_column <> approval.key_value
-       OR new_record ->> approval.key_column <> approval.key_value
-       OR old_record ->> approval.update_column <> approval.old_value
-       OR new_record ->> approval.update_column <> approval.new_value
+    IF old_record ->> approval.key_column IS DISTINCT FROM approval.key_value
+       OR new_record ->> approval.key_column IS DISTINCT FROM approval.key_value
+       OR old_record ->> approval.update_column IS DISTINCT FROM approval.old_value
+       OR new_record ->> approval.update_column IS DISTINCT FROM approval.new_value
        OR (old_record - approval.update_column)
             IS DISTINCT FROM (new_record - approval.update_column) THEN
         RAISE EXCEPTION 'effect gate: record changed beyond exact approved effect'
