@@ -11,6 +11,7 @@ REVOKE ALL ON SCHEMA agentproof_guard FROM PUBLIC;
 CREATE TABLE agentproof_guard.action_grants (
     action_id uuid PRIMARY KEY,
     customer_id text NOT NULL,
+    executor_role name NOT NULL,
     from_status text NOT NULL,
     to_status text NOT NULL,
     expires_at timestamptz NOT NULL,
@@ -91,7 +92,8 @@ BEGIN
       FROM agentproof_guard.action_grants
      WHERE action_id = request_id FOR UPDATE;
     IF NOT FOUND OR authorization.consumed_at IS NOT NULL
-       OR authorization.expires_at <= pg_catalog.clock_timestamp() THEN
+       OR authorization.expires_at <= pg_catalog.clock_timestamp()
+       OR authorization.executor_role <> SESSION_USER THEN
         RAISE EXCEPTION 'effect gate: grant missing, expired or already used'
             USING ERRCODE = '42501';
     END IF;
