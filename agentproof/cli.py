@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .engine import PolicyError, evaluate, verify_signature
+from .terraform_guard import TerraformGateError, apply_saved_plan, review_plan, review_saved_plan
 
 
 def read_json(path):
@@ -25,8 +26,41 @@ def main(argv=None):
     verify = sub.add_parser("check-signature", help="verify HMAC receipt")
     verify.add_argument("--receipt", required=True)
     verify.add_argument("--signing-key-env", required=True)
+    tf = sub.add_parser("terraform", help="review Terraform plans or gate a deliberately opted-in apply")
+    inp = tf.add_mutually_exclusive_group(required=True)
+    inp.add_argument("--plan", help="saved binary plan, inspected by terraform show -json")
+    inp.add_argument("--plan-json", help="JSON fixture mode, NOT bound to executable plan")
+    tf.add_argument("--policy", required=True)
+    tf.add_argument("--approved-sha256", help="independently approved saved-plan SHA-256")
+    tf.add_argument("--execute", action="store_true", help="explicitly apply the saved plan after passing all gates")
+    tf.add_argument("--output", help="write JSON decision receipt")
     args = parser.parse_args(argv)
     try:
+        if args.command == "terraform":
+            if args.execute and (not args.plan or not args.approved_sha256):
+                raise TerraformGateError("--execute requires --plan and --approved-sha256")
+            policy = read_json(args.policy)
+            if args.execute:
+                report = apply_saved_plan(Path(args.plan), policy, approved_sha256=args.approved_sha256)
+                exit_code = 0 if report["state"] == "apply_completed_unverified" else 4
+            elif args.plan:
+                report = review_saved_plan(Path(args.plan), policy, expected_sha256=args.approved_sha256)
+                exit_code = 0 if report["verdict"] == "approve" else 4
+            else:
+                if args.approved_sha256:
+                    raise TerraformGateError("--approved-sha256 requires binary --plan")
+                report = review_plan(read_json(args.plan_json), policy)
+                exit_code = 0 if report["verdict"] == "approve" else 4
+            rendered = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+            if args.output:
+                Path(args.output).write_text(rendered, encoding="utf-8")
+                try:
+                    os.chmod(args.output, 0o600)
+                except OSError:
+                    pass
+            else:
+                print(rendered, end="")
+            return exit_code
         if args.command == "verify":
             key = None
             if args.signing_key_env:
@@ -63,7 +97,7 @@ def main(argv=None):
                 failed.append(case["id"])
         print(f"{len(cases) - len(failed)}/{len(cases)} cases matched expected verdicts")
         return 4 if failed else 0
-    except (PolicyError, OSError, json.JSONDecodeError) as exc:
+    except (PolicyError, TerraformGateError, OSError, json.JSONDecodeError) as exc:
         print(f"verification unavailable: {exc}", file=sys.stderr)
         return 4
 
