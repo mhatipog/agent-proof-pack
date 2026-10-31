@@ -20,7 +20,7 @@ from typing import Any
 from .engine import canonical, digest
 
 SCHEMA = 'agent-proof-pack/sqlite-effect-contract/v1'
-SNAPSHOT_SCHEMA = 'agent-proof-pack/sqlite-effect-snapshot/v1'
+SNAPSHOT_SCHEMA = 'agent-proof-pack/effect-snapshot/v2'
 PREDICATE_TYPE = 'https://github.com/mhatipog/agent-proof-pack/blob/main/docs/PROOF_OF_EFFECT.md#predicate-v1'
 IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
 MAX_TABLES = 8
@@ -169,31 +169,35 @@ def _snapshot(db: Path, contract: dict, key: bytes) -> dict:
             conn.close()
 
 
-def _payload(contract: dict, tables: dict, at: int) -> dict:
+def _payload(contract: dict, tables: dict, at: int, backend: str) -> dict:
     return {'schema': SNAPSHOT_SCHEMA, 'contract_sha256': digest(contract),
-            'captured_at': at, 'tables': tables}
+            'captured_at': at, 'backend': backend, 'tables': tables}
 
 
-def capture(db: Path, contract: dict, key: str, *, now: int | None = None) -> dict:
+def capture(db: Path, contract: dict, key: str, *, now: int | None = None,
+            reader=None, backend: str = 'sqlite') -> dict:
     """Issue a signed redacted before-snapshot. Run outside the agent runtime."""
     _validate_contract(contract)
     secret = _secret(key)
     at = int(time.time()) if now is None else now
     if type(at) is not int or at < 0:
         raise EffectError('invalid capture time')
-    p = _payload(contract, _snapshot(db, contract, secret), at)
+    if not isinstance(backend, str) or backend not in ('sqlite', 'postgresql'):
+        raise EffectError('unsupported observer backend')
+    p = _payload(contract, (reader or _snapshot)(db, contract, secret), at, backend)
     return {**p, 'hmac_sha256': _mac(secret, canonical(p))}
 
 
-def _verify_before(before: dict, contract: dict, key: bytes, *, now: int):
+def _verify_before(before: dict, contract: dict, key: bytes, *, now: int, backend: str):
     if not isinstance(before, dict) or set(before) != {'schema', 'contract_sha256',
-                                                        'captured_at', 'tables', 'hmac_sha256'}:
+                                                        'captured_at', 'backend', 'tables', 'hmac_sha256'}:
         raise EffectError('invalid signed snapshot fields')
     body = {k: v for k, v in before.items() if k != 'hmac_sha256'}
     sig = before['hmac_sha256']
     if (not isinstance(sig, str) or not re.fullmatch(r'[a-f0-9]{64}', sig) or
         not hmac.compare_digest(sig, _mac(key, canonical(body))) or
-        body['schema'] != SNAPSHOT_SCHEMA or body['contract_sha256'] != digest(contract)):
+        body['schema'] != SNAPSHOT_SCHEMA or body['contract_sha256'] != digest(contract) or
+        body['backend'] != backend):
         raise EffectError('before snapshot signature/contract invalid')
     at = body['captured_at']
     if type(at) is not int or not (at <= now <= at + MAX_AGE_SECONDS):
@@ -202,7 +206,8 @@ def _verify_before(before: dict, contract: dict, key: bytes, *, now: int):
         raise EffectError('signed snapshot table set invalid')
 
 
-def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | None = None) -> dict:
+def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | None = None,
+              reader=None, backend: str = 'sqlite') -> dict:
     """Return a signed in-toto-shaped statement, or fail if evidence is invalid.
 
     This checks one explicitly expected UPDATE and *every* row/column in
@@ -213,8 +218,10 @@ def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | No
     at = int(time.time()) if now is None else now
     if type(at) is not int or at < 0:
         raise EffectError('invalid verifier time')
-    _verify_before(before, contract, secret, now=at)
-    after = _snapshot(db, contract, secret)
+    if not isinstance(backend, str) or backend not in ('sqlite', 'postgresql'):
+        raise EffectError('unsupported observer backend')
+    _verify_before(before, contract, secret, now=at, backend=backend)
+    after = (reader or _snapshot)(db, contract, secret)
     checks = []
     def check(condition: bool, code: str):
         checks.append({'id': code, 'status': 'pass' if condition else 'fail'})
@@ -253,12 +260,19 @@ def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | No
         actual_hash = target_after.get(col) if isinstance(target_after, dict) else None
         check(actual_hash == _cell_hash(secret, target['table'], target['key'], col, value),
               'expected-value:' + col)
-    check(not target['require_change'] or changed_rows > 0, 'expected-mutation-occurred')
+    # A mutation elsewhere, or of another permitted field, must not count as
+    # proof that the specifically expected value transitioned.
+    expected_transition = any(
+        isinstance(target_before, dict) and
+        target_before.get(col) != _cell_hash(secret, target['table'], target['key'], col, val)
+        for col, val in target['expected'].items()
+    )
+    check(not target['require_change'] or expected_transition, 'expected-value-transitioned')
     verified = all(c['status'] == 'pass' for c in checks)
     before_digest = digest({k: v for k, v in before.items() if k != 'hmac_sha256'})
     after_digest = digest(after)
     predicate = {'schema': 'agent-proof-pack/effect-predicate/v1',
-                 'contract_sha256': digest(contract), 'before_sha256': before_digest,
+                 'contract_sha256': digest(contract), 'backend': backend, 'before_sha256': before_digest,
                  'after_sha256': after_digest, 'status': 'verified' if verified else 'failed',
                  'changed_rows': changed_rows, 'changed_cells': changed_cells,
                  'watched_tables': contract['watch_tables'], 'checks': checks,
