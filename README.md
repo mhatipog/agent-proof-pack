@@ -14,13 +14,19 @@ In July 2025, a Replit AI coding agent deleted live application data. Replit sub
 
 Our [incident-class reproduction](docs/CHINOOK_INCIDENT_LAB.md) uses the **unmodified, MIT-licensed [Chinook](https://github.com/lerocha/chinook-database) commerce schema and seed data** imported into a disposable PostgreSQL 16 instance. Rather than another invented customer table, it checks real customer records and invoice lines using three different DB identities.
 
-- An agent's staging credentials cannot connect to production; a scoped production writer cannot DELETE, TRUNCATE, DROP or edit invoice lines.
+- An agent's staging credentials cannot connect to production; a scoped production writer cannot DELETE, TRUNCATE, DROP or edit invoice lines. An actual database-enforced code freeze revokes its remaining UPDATE privilege.
 - A permitted customer update followed by an unauthorized invoice-line update in one transaction **rolls back both**.
 - If a privileged owner bypasses permissions and quietly edits an invoice line anyway, the **independent read-only witness detects the collateral change**.
 
 [Inspect the runnable real-database CI](.github/workflows/chinook-incident.yml) · [Read the sourced incident and precise limitations](docs/CHINOOK_INCIDENT_LAB.md).
 
 **Honest scope:** This reconstructs the *failure class*, not Replit's unavailable logs. Most prevention comes from native PostgreSQL privileges; this tool contributes the independent, signed after-effect verdict.
+
+## A configurable transaction gate, tested on the upstream store
+
+The [generic PostgreSQL gate](docs/GENERIC_TRANSACTION_GATE.md) accepts an independently granted **single-row text-column update** on a protected table. It binds approval to the exact database login and transaction, consumes it once, and rejects unexpected writes to any enrolled table. Unlike the original fixed customer-status function, the same installer is used against Chinook's real `customer.email` and `invoice_line` schema.
+
+[Actual PostgreSQL tests](tests/integration_chinook_generic_gate.py) cover a valid approved email change, concurrent grant replay, a malicious invoice-line side effect that must roll back the transaction, and independent readback. **Reference implementation only**: no general SQL, production schema migration or external side-effect guarantee.
 
 ## Transaction effect gate (experimental PostgreSQL sandbox)
 
