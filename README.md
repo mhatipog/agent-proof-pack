@@ -24,7 +24,7 @@ Our [incident-class reproduction](docs/CHINOOK_INCIDENT_LAB.md) uses the **unmod
 
 ## A configurable transaction gate, tested on the upstream store
 
-The [generic PostgreSQL gate](docs/GENERIC_TRANSACTION_GATE.md) accepts an independently granted **single-row text-column update** on a protected table. It binds approval to the exact database login and transaction, consumes it once, and rejects unexpected writes to any enrolled table. Unlike the original fixed customer-status function, the same installer is used against Chinook's real `customer.email` and `invoice_line` schema.
+The [generic PostgreSQL gate](docs/GENERIC_TRANSACTION_GATE.md) accepts an independently granted **single-row text-column update** on a protected table; an operator can **revoke pending grants to enforce a freeze**. It binds approval to the exact database login and transaction, consumes it once, and rejects unexpected writes to any enrolled table. Unlike the original fixed customer-status function, the same installer is used against Chinook's real `customer.email` and `invoice_line` schema.
 
 [Actual PostgreSQL tests](tests/integration_chinook_generic_gate.py) cover a valid approved email change, concurrent grant replay, a malicious invoice-line side effect that must roll back the transaction, and independent readback. **Reference implementation only**: no general SQL, production schema migration or external side-effect guarantee.
 
