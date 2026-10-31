@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - "tests/integration_chinook_incident.py"
+      - "tests/integration_chinook_generic_gate.py"
+      - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
       - "docs/CHINOOK_INCIDENT_LAB.md"
   push:
@@ -102,5 +104,7 @@ jobs:
           PY
       - name: Test deletion attempts, atomic rollback and independent evidence
         run: python -m unittest discover -s tests -p "integration_chinook_incident.py" -v
+      - name: Install generic row/column transaction gate and test on Chinook
+        run: python -m unittest discover -s tests -p "integration_chinook_generic_gate.py" -v
       - name: Existing SQLite and PostgreSQL codec regression tests
         run: python -m unittest discover -s tests -p "test_pg_codec.py" -v
