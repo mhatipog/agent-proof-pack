@@ -8,6 +8,20 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## Real PostgreSQL store: reproduce the documented production-deletion failure class
+
+In July 2025, a Replit AI coding agent deleted live application data. Replit subsequently acknowledged that development and production had shared a database and introduced their separation. The exact original SQL isn't public.
+
+Our [incident-class reproduction](docs/CHINOOK_INCIDENT_LAB.md) uses the **unmodified, MIT-licensed [Chinook](https://github.com/lerocha/chinook-database) commerce schema and seed data** imported into a disposable PostgreSQL 16 instance. Rather than another invented customer table, it checks real customer records and invoice lines using three different DB identities.
+
+- An agent's staging credentials cannot connect to production; a scoped production writer cannot DELETE, TRUNCATE, DROP or edit invoice lines.
+- A permitted customer update followed by an unauthorized invoice-line update in one transaction **rolls back both**.
+- If a privileged owner bypasses permissions and quietly edits an invoice line anyway, the **independent read-only witness detects the collateral change**.
+
+[Inspect the runnable real-database CI](.github/workflows/chinook-incident.yml) · [Read the sourced incident and precise limitations](docs/CHINOOK_INCIDENT_LAB.md).
+
+**Honest scope:** This reconstructs the *failure class*, not Replit's unavailable logs. Most prevention comes from native PostgreSQL privileges; this tool contributes the independent, signed after-effect verdict.
+
 ## Transaction effect gate (experimental PostgreSQL sandbox)
 
 The existing witness detects unintended changes **after** a database operation. The new [transaction effect gate](docs/TRANSACTION_GATE.md) demonstrates preventing an unintended change **before commit**.
