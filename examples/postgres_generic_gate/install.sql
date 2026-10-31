@@ -18,6 +18,7 @@ CREATE TABLE agentproof_generic.grants (
     new_value text NOT NULL,
     executor_role name NOT NULL,
     expires_at timestamptz NOT NULL,
+    revoked_at timestamptz,
     consumed_at timestamptz,
     CONSTRAINT value_changed CHECK (old_value <> new_value),
     CONSTRAINT different_columns CHECK (key_column <> update_column)
@@ -67,6 +68,7 @@ BEGIN
        OR approval.target_oid <> TG_RELID
        OR approval.executor_role <> SESSION_USER
        OR approval.consumed_at IS NOT NULL
+       OR approval.revoked_at IS NOT NULL
        OR approval.expires_at <= pg_catalog.clock_timestamp() THEN
         RAISE EXCEPTION 'effect gate: no matching transaction-bound grant'
             USING ERRCODE = '42501';
@@ -141,6 +143,7 @@ BEGIN
      WHERE action_id = request_id FOR UPDATE;
     IF NOT FOUND
        OR approval.consumed_at IS NOT NULL
+       OR approval.revoked_at IS NOT NULL
        OR approval.expires_at <= pg_catalog.clock_timestamp()
        OR approval.executor_role <> SESSION_USER THEN
         RAISE EXCEPTION 'effect gate: grant missing, expired or wrong role'
