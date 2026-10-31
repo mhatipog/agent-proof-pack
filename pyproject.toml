@@ -4,12 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-proof-pack"
-version = "0.5.0"
-description = "Deterministic, fail-closed action verification with evidence receipts for AI agents"
+version = "0.6.0"
+description = "Independent outcome verification for AI agent database writes: SQLite, PostgreSQL and in-toto evidence"
+readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "mhatipog"}]
 license = {text = "MIT"}
-classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
+keywords = ["ai-agents", "agent-security", "data-integrity", "postgresql", "sqlite", "read-after-write", "attestation", "in-toto"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License"
+]
+
+[project.optional-dependencies]
+postgresql = ["psycopg[binary]>=3.2,<4"]
+
+[project.urls]
+Homepage = "https://github.com/mhatipog/agent-proof-pack"
+Documentation = "https://github.com/mhatipog/agent-proof-pack/blob/main/docs/PROOF_OF_EFFECT.md"
+"PostgreSQL guide" = "https://github.com/mhatipog/agent-proof-pack/blob/main/docs/POSTGRESQL.md"
+Issues = "https://github.com/mhatipog/agent-proof-pack/issues"
+Source = "https://github.com/mhatipog/agent-proof-pack"
 
 [project.scripts]
 agent-proof = "agentproof.cli:main"
