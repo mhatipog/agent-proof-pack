@@ -1,0 +1,50 @@
+name: terraform saved-plan integration (local resources only)
+on:
+  pull_request:
+    paths:
+      - 'agentproof/terraform_guard.py'
+      - 'agentproof/cli.py'
+      - 'examples/terraform/**'
+      - 'tests/test_terraform_guard.py'
+      - '.github/workflows/terraform-integration.yml'
+  workflow_dispatch:
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      - name: Real saved binary plan is approved, replacement is blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          cp "$root/examples/terraform/live/main.tf" "$work/main.tf"
+          cd "$work"
+          terraform init -input=false -backend=false
+          terraform plan -input=false -out=create.tfplan
+          PYTHONPATH="$root" python -m agentproof terraform --plan create.tfplan --policy "$root/examples/terraform/policy.json" > create-review.json
+          grep -q '"verdict": "approve"' create-review.json
+
+          # A self-approved hash is ONLY acceptable in this synthetic test;
+          # real deployments must require an independent, protected approval.
+          test_digest="$(sha256sum create.tfplan | cut -d' ' -f1)"
+          PYTHONPATH="$root" python -m agentproof terraform --plan create.tfplan --policy "$root/examples/terraform/policy.json" --approved-sha256 "$test_digest" --execute > apply-result.json
+          grep -q '"state": "apply_completed_unverified"' apply-result.json
+          sed -i 's/triggers_replace = "v1"/triggers_replace = "v2"/' main.tf
+          terraform plan -input=false -out=replacement.tfplan
+          if PYTHONPATH="$root" python -m agentproof terraform --plan replacement.tfplan --policy "$root/examples/terraform/policy.json" > reject-review.json; then
+            echo "SAFETY FAILURE: real Terraform replacement plan incorrectly approved" >&2
+            exit 1
+          fi
+          grep -q '"verdict": "block"' reject-review.json
