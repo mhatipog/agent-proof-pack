@@ -1,0 +1,9 @@
+{
+  "schema": "agent-proof-pack/file-expectations/v1",
+  "files": [
+    {
+      "path": "proof.txt",
+      "sha256": "a29067ecc00fc1469ec9e15eb94321f6ef411811034d8118ea6cbd2eb9b8a77f"
+    }
+  ]
+}

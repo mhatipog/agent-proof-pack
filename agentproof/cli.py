@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from .engine import PolicyError, evaluate, verify_signature
+from .approval import ApprovalError, issue as issue_approval, verify_outcome
+from .attest import ObservationError, observe_files
 from .terraform_guard import TerraformGateError, apply_saved_plan, review_plan, review_saved_plan
 
 
@@ -34,17 +36,69 @@ def main(argv=None):
     tf.add_argument("--approved-sha256", help="independently approved saved-plan SHA-256")
     tf.add_argument("--execute", action="store_true", help="explicitly apply the saved plan after passing all gates")
     tf.add_argument("--output", help="write JSON decision receipt")
+    issuer = sub.add_parser("issue-terraform-approval", help="sign exact plan, policy and outcome in a PROTECTED approver runtime")
+    for flag in ("plan", "policy", "expectations", "environment", "approver", "key-env", "output"):
+        issuer.add_argument("--" + flag, required=True)
+    issuer.add_argument("--ttl-seconds", type=int, default=900)
+    observer = sub.add_parser("observe-files", help="independently hash expected filesystem results")
+    observer.add_argument("--root", required=True)
+    observer.add_argument("--expectations", required=True)
+    tf.add_argument("--approval", help="short-lived signed approval JSON for execution")
+    tf.add_argument("--approval-key-env", help="approver HMAC key environment variable (trusted executor only)")
+    tf.add_argument("--environment", help="exact approved target environment")
+    tf.add_argument("--expectations", help="trusted expected-result JSON")
+    tf.add_argument("--observe-root", help="trusted filesystem root for postflight proof")
+    outcome = sub.add_parser("check-outcome", help="authenticate a stored Terraform outcome receipt")
+    outcome.add_argument("--receipt", required=True)
+    outcome.add_argument("--key-env", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "issue-terraform-approval":
+            secret = os.environ.get(args.key_env)
+            if not secret:
+                raise ApprovalError("protected approver key missing")
+            from .terraform_guard import saved_plan_sha256
+            approval = issue_approval(
+                plan_sha256=saved_plan_sha256(Path(args.plan)), policy=read_json(args.policy),
+                expectations=read_json(args.expectations), environment=args.environment,
+                approver=args.approver, key=secret, ttl_seconds=args.ttl_seconds)
+            # Refuse overwriting an existing approval; independent reviewers
+            # should sign into a protected artifact directory.
+            with open(args.output, "x", encoding="utf-8") as handle:
+                json.dump(approval, handle, indent=2)
+                handle.write("\n")
+            os.chmod(args.output, 0o600)
+            print("Signed approval written to protected output path")
+            return 0
+        if args.command == "check-outcome":
+            ok = verify_outcome(read_json(args.receipt), os.environ.get(args.key_env))
+            print("VALID" if ok else "INVALID")
+            return 0 if ok else 4
+        if args.command == "observe-files":
+            report = observe_files(Path(args.root), read_json(args.expectations))
+            print(json.dumps(report, indent=2))
+            return 0 if report["state"] == "verified" else 4
         if args.command == "terraform":
-            if args.execute and (not args.plan or not args.approved_sha256):
-                raise TerraformGateError("--execute requires --plan and --approved-sha256")
             policy = read_json(args.policy)
             if args.execute:
-                report = apply_saved_plan(Path(args.plan), policy, approved_sha256=args.approved_sha256)
-                exit_code = 0 if report["state"] == "apply_completed_unverified" else 4
+                if (not args.plan or args.approved_sha256 or
+                    not all((args.approval, args.approval_key_env, args.environment,
+                             args.expectations, args.observe_root))):
+                    raise TerraformGateError(
+                        "--execute requires binary --plan, signed --approval, --approval-key-env, "
+                        "--environment, --expectations and --observe-root; raw hashes cannot authorize apply")
+                secret = os.environ.get(args.approval_key_env)
+                if not secret:
+                    raise ApprovalError("independent approval key missing")
+                report = apply_saved_plan(
+                    Path(args.plan), policy, approval=read_json(args.approval),
+                    approval_key=secret, environment=args.environment,
+                    expectations=read_json(args.expectations),
+                    observe_root=Path(args.observe_root))
+                exit_code = 0 if report["state"] == "verified" else 4
             elif args.plan:
-                report = review_saved_plan(Path(args.plan), policy, expected_sha256=args.approved_sha256)
+                report = review_saved_plan(Path(args.plan), policy,
+                                           expected_sha256=args.approved_sha256)
                 exit_code = 0 if report["verdict"] == "approve" else 4
             else:
                 if args.approved_sha256:
@@ -54,10 +108,7 @@ def main(argv=None):
             rendered = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
             if args.output:
                 Path(args.output).write_text(rendered, encoding="utf-8")
-                try:
-                    os.chmod(args.output, 0o600)
-                except OSError:
-                    pass
+                os.chmod(args.output, 0o600)
             else:
                 print(rendered, end="")
             return exit_code
@@ -97,7 +148,7 @@ def main(argv=None):
                 failed.append(case["id"])
         print(f"{len(cases) - len(failed)}/{len(cases)} cases matched expected verdicts")
         return 4 if failed else 0
-    except (PolicyError, TerraformGateError, OSError, json.JSONDecodeError) as exc:
+    except (PolicyError, TerraformGateError, ApprovalError, ObservationError, OSError, json.JSONDecodeError) as exc:
         print(f"verification unavailable: {exc}", file=sys.stderr)
         return 4
 

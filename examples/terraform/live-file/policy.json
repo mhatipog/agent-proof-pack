@@ -1,0 +1,16 @@
+{
+  "schema": "agent-proof-pack/terraform-policy/v1",
+  "id": "sandbox-local-file-create-only",
+  "allowed_resource_types": [
+    "local_file"
+  ],
+  "allowed_actions": [
+    "create",
+    "no-op"
+  ],
+  "max_changed_resources": 1,
+  "protected_addresses": [],
+  "allowed_output_names": [],
+  "allow_resource_drift": false,
+  "allow_destructive_addresses": []
+}

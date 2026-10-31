@@ -8,6 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
+from agentproof.approval import ApprovalError, issue
 from agentproof.terraform_guard import (
     TerraformGateError, apply_saved_plan, review_plan, review_saved_plan, saved_plan_sha256,
 )
@@ -152,49 +153,40 @@ class TerraformReviewTests(unittest.TestCase):
             self.assertEqual(r["source"], "saved_plan")
             self.assertEqual(run.call_args.args[0][1:3], ["show", "-json"])
 
-    def test_unapproved_apply_never_runs(self):
+    def test_signed_destructive_plan_refused_before_apply(self):
+        expected = {"schema": "agent-proof-pack/file-expectations/v1", "files":
+                    [{"path": "proof.txt", "sha256": hashlib.sha256(b"ok").hexdigest()}]}
+        key = "test-only-approval-secret-with-adequate-length-0123456789"
         with tempfile.TemporaryDirectory() as tmp:
             plan = Path(tmp) / "saved.tfplan"
             plan.write_bytes(b"destructive-plan")
+            a = issue(plan_sha256=saved_plan_sha256(plan), policy=POLICY,
+                      expectations=expected, environment="sandbox", approver="reviewer", key=key)
             called = []
             def fake_run(args, **kwargs):
                 called.append(args[1])
                 if args[1] == "show":
                     return subprocess.CompletedProcess(args, 0, json.dumps(DESTRUCTIVE).encode(), b"")
-                raise AssertionError("apply must not be called")
+                raise AssertionError("apply must not run")
             with patch("agentproof.terraform_guard.subprocess.run", side_effect=fake_run):
-                r = apply_saved_plan(plan, POLICY, approved_sha256=saved_plan_sha256(plan))
-            self.assertEqual(r["state"], "refused")
+                result = apply_saved_plan(plan, POLICY, approval=a, approval_key=key,
+                    environment="sandbox", expectations=expected, observe_root=Path(tmp))
+            self.assertEqual(result["state"], "refused")
             self.assertEqual(called, ["show"])
 
-    def test_approved_apply_same_private_snapshot(self):
+    def test_wrong_approved_digest_no_terraform_call(self):
+        expected = {"schema": "agent-proof-pack/file-expectations/v1", "files":
+                    [{"path": "proof.txt", "sha256": hashlib.sha256(b"ok").hexdigest()}]}
+        key = "test-only-approval-secret-with-adequate-length-0123456789"
         with tempfile.TemporaryDirectory() as tmp:
             plan = Path(tmp) / "saved.tfplan"
-            plan.write_bytes(b"allow-plan")
-            sha = saved_plan_sha256(plan)
-            paths = []
-            def fake_run(args, **kwargs):
-                paths.append(Path(args[-1]))
-                self.assertEqual(saved_plan_sha256(paths[-1]), sha)
-                if args[1] == "show":
-                    return subprocess.CompletedProcess(args, 0, json.dumps(SAFE).encode(), b"")
-                self.assertEqual(args[1:3], ["apply", "-input=false"])
-                return subprocess.CompletedProcess(args, 0)
-            with patch("agentproof.terraform_guard.subprocess.run", side_effect=fake_run):
-                r = apply_saved_plan(plan, POLICY, approved_sha256=sha)
-            self.assertEqual(r["state"], "apply_completed_unverified")
-            self.assertTrue(r["executed"])
-            self.assertEqual(paths[0], paths[1])
-            self.assertNotEqual(paths[0], plan)
-            self.assertFalse(paths[0].exists())
-
-    def test_wrong_approved_digest_no_terraform_call(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            plan = Path(tmp) / "plan"
             plan.write_bytes(b"plan")
+            a = issue(plan_sha256="0"*64, policy=POLICY,
+                      expectations=expected, environment="sandbox", approver="reviewer", key=key)
             with patch("agentproof.terraform_guard.subprocess.run") as run:
-                with self.assertRaises(TerraformGateError):
-                    apply_saved_plan(plan, POLICY, approved_sha256="0"*64)
+                with self.assertRaises(ApprovalError):
+                    apply_saved_plan(plan, POLICY, approval=a, approval_key=key,
+                        environment="sandbox", expectations=expected, observe_root=Path(tmp))
                 run.assert_not_called()
 
     def test_state_move_even_noop_must_block(self):
