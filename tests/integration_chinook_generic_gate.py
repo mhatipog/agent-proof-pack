@@ -16,7 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 
 from agentproof.postgres_effect import capture_postgres, reconcile_postgres
-from agentproof.effect import verify_witness
+from agentproof.effect import verify_witness, EffectError
+from agentproof.generic_cli import apply_approved, observe_approved, verify_outcome
 
 ADMIN = os.getenv("AGENTPROOF_CHINOOK_ADMIN_DSN")
 WRITER = os.getenv("AGENTPROOF_CHINOOK_WRITER_DSN")
@@ -63,7 +64,7 @@ class GenericChinookGateTests(unittest.TestCase):
             c.execute("GRANT USAGE ON SCHEMA agentproof_generic TO incident_prod_actor")
             c.execute("GRANT EXECUTE ON FUNCTION agentproof_generic.apply_text_change(uuid) TO incident_prod_actor")
             c.execute("GRANT USAGE ON SCHEMA agentproof_generic TO incident_witness_reader")
-            c.execute("GRANT SELECT ON agentproof_generic.committed TO incident_witness_reader")
+            c.execute("GRANT SELECT ON agentproof_generic.committed, agentproof_generic.grants TO incident_witness_reader")
 
     def setUp(self):
         # Only the trusted owner can temporarily disable these fixture guards;
@@ -138,6 +139,43 @@ class GenericChinookGateTests(unittest.TestCase):
         self.assertTrue(self.consumed(a))
         self.assertEqual(self.committed(a)[:4],
                          ("incident_prod_actor", "1", self.original_email, TARGET))
+
+    def generic_contract(self, action):
+        return {
+            "schema": "agent-proof-pack/generic-transaction-contract/v1",
+            "id": "chinook_email_change", "action_id": str(action),
+            "executor_role": "incident_prod_actor",
+            "table": "public.customer", "key_column": "customer_id",
+            "key_value": "1", "update_column": "email",
+            "old_value": self.original_email, "new_value": TARGET,
+        }
+
+    def test_real_agent_tool_only_accepts_grant_uuid_and_witness_checks_actual_row(self):
+        action = self.grant()
+        execution = apply_approved(WRITER, str(action))
+        self.assertEqual(execution["state"], "submitted_unverified")
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        self.assertEqual(evidence["statement"]["predicate"]["status"], "verified")
+        self.assertTrue(verify_outcome(evidence, KEY))
+        self.assertEqual(self.state(), (TARGET, self.original_price))
+        self.assertTrue(self.consumed(action))
+
+    def test_witness_cannot_call_missing_grant_verified(self):
+        action = self.grant()
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        self.assertEqual(evidence["statement"]["predicate"]["status"], "failed")
+        self.assertTrue(verify_outcome(evidence, KEY))
+
+    def test_tampered_witness_receipt_is_detected(self):
+        action = self.grant()
+        apply_approved(WRITER, str(action))
+        evidence = observe_approved(READER, self.generic_contract(action), KEY)
+        evidence["statement"]["predicate"]["status"] = "failed"
+        self.assertFalse(verify_outcome(evidence, KEY))
+
+    def test_agent_tool_rejects_arbitrary_sql_as_action_id(self):
+        with self.assertRaises(EffectError):
+            apply_approved(WRITER, "UPDATE public.invoice_line SET unit_price=0")
 
     def test_direct_write_is_refused_even_if_actor_has_column_update_grant(self):
         with self.assertRaises(psycopg.Error):
