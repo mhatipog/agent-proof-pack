@@ -74,16 +74,16 @@ def _read_records(conninfo: str, action_id: str):
                     SELECT executor_role::text, customer_id, from_status,
                            to_status, consumed_at
                       FROM agentproof_guard.action_grants WHERE action_id = %s
-                """, (action_id,)).fetchone()
+                """, (UUID(action_id),)).fetchone()
                 committed = conn.execute("""
                     SELECT transaction_id, executor_role::text, customer_id,
                            from_status, to_status
                       FROM agentproof_guard.committed_actions WHERE action_id = %s
-                """, (action_id,)).fetchone()
+                """, (UUID(action_id),)).fetchone()
                 effect = conn.execute("""
                     SELECT transaction_id, customer_id, from_status, to_status
                       FROM agentproof_guard.row_effects WHERE action_id = %s
-                """, (action_id,)).fetchone()
+                """, (UUID(action_id),)).fetchone()
                 conn.execute("COMMIT")
                 return grant, committed, effect
             except Exception:
