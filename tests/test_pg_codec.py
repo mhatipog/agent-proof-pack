@@ -1,6 +1,6 @@
 """PostgreSQL value codec tests; these need no PostgreSQL server."""
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from decimal import Decimal, localcontext
 from uuid import UUID
 
@@ -55,7 +55,7 @@ class PostgreSQLCodecTests(unittest.TestCase):
     def test_boolean_must_be_boolean(self):
         self.assertEqual(normalize_pg_value(True, "boolean"),
                          normalize_pg_value(True, "boolean", from_contract=True))
-        for bad in [1, "true", None if False else "1"]:
+        for bad in [1, 0, "true", "1"]:
             with self.subTest(bad=bad), self.assertRaises(EffectError):
                 normalize_pg_value(bad, "boolean", from_contract=True)
 
