@@ -41,7 +41,7 @@ def _secret(key: str) -> bytes:
     return key.encode('utf8')
 
 
-def _validate_contract(contract: dict) -> None:
+def _validate_contract(contract: dict, *, backend: str = 'sqlite') -> None:
     if not isinstance(contract, dict) or set(contract) != {'schema', 'id', 'watch_tables', 'target'}:
         raise EffectError('invalid contract schema or fields')
     if contract['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(contract['id'], str) or not IDENT.fullmatch(contract['id']):
@@ -71,6 +71,9 @@ def _validate_contract(contract: dict) -> None:
     if type(target['require_change']) is not bool:
         raise EffectError('require_change must be boolean')
     for value in [target['key'], *target['expected'].values()]:
+        if backend == 'postgresql' and type(value) is bool:
+            # PG boolean expectations are checked against column metadata later.
+            continue
         _encode_value(value)
 
 
@@ -189,7 +192,7 @@ def _payload(contract: dict, tables: dict, at: int, backend: str) -> dict:
 def capture(db: Path, contract: dict, key: str, *, now: int | None = None,
             reader=None, backend: str = 'sqlite') -> dict:
     """Issue a signed redacted before-snapshot. Run outside the agent runtime."""
-    _validate_contract(contract)
+    _validate_contract(contract, backend=backend)
     secret = _secret(key)
     at = int(time.time()) if now is None else now
     if type(at) is not int or at < 0:
@@ -219,13 +222,13 @@ def _verify_before(before: dict, contract: dict, key: bytes, *, now: int, backen
 
 
 def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | None = None,
-              reader=None, backend: str = 'sqlite') -> dict:
+              reader=None, backend: str = 'sqlite', expected_normalizer=None) -> dict:
     """Return a signed in-toto-shaped statement, or fail if evidence is invalid.
 
     This checks one explicitly expected UPDATE and *every* row/column in
     watched tables for collateral effects. Unwatched tables are out of scope.
     """
-    _validate_contract(contract)
+    _validate_contract(contract, backend=backend)
     secret = _secret(key)
     at = int(time.time()) if now is None else now
     if type(at) is not int or at < 0:
@@ -239,7 +242,16 @@ def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | No
         checks.append({'id': code, 'status': 'pass' if condition else 'fail'})
 
     target = contract['target']
-    target_pk = _pk_hash(secret, target['table'], target['key'])
+    def expected(column, value):
+        if expected_normalizer is None:
+            return value
+        types = after[target['table']].get('column_types')
+        if not isinstance(types, dict) or column not in types:
+            raise EffectError('PostgreSQL snapshot missing trusted column types')
+        return expected_normalizer(value, types[column], from_contract=True)
+
+    target_key = expected(target['key_column'], target['key'])
+    target_pk = _pk_hash(secret, target['table'], target_key)
     changed_cells = 0
     changed_rows = 0
     for table in contract['watch_tables']:
@@ -270,13 +282,13 @@ def reconcile(db: Path, contract: dict, before: dict, key: str, *, now: int | No
     check(isinstance(target_before, dict) and isinstance(target_after, dict), 'target-exists')
     for col, value in target['expected'].items():
         actual_hash = target_after.get(col) if isinstance(target_after, dict) else None
-        check(actual_hash == _cell_hash(secret, target['table'], target['key'], col, value),
+        check(actual_hash == _cell_hash(secret, target['table'], target_key, col, expected(col, value)),
               'expected-value:' + col)
     # A mutation elsewhere, or of another permitted field, must not count as
     # proof that the specifically expected value transitioned.
     expected_transition = any(
         isinstance(target_before, dict) and
-        target_before.get(col) != _cell_hash(secret, target['table'], target['key'], col, val)
+        target_before.get(col) != _cell_hash(secret, target['table'], target_key, col, expected(col, val))
         for col, val in target['expected'].items()
     )
     check(not target['require_change'] or expected_transition, 'expected-value-transitioned')

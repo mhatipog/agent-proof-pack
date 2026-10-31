@@ -36,6 +36,36 @@ The example assumes ordinary tables in the `public` schema, single-column declar
 
 The [contract example](../examples/proof_of_effect/contract.json) defines `customers` and `invoices` as watched tables, with one permitted status change on one customer. The verifier is read-only. It cannot execute SQL requested by the agent.
 
+## Typed PostgreSQL columns
+
+The PostgreSQL witness supports `uuid`, `boolean`, `numeric(p,s)` and `timestamp with time zone` in addition to null, text/varchar/char, integer, finite floating-point and bytea. Column types come from the database catalog and are bound into signed observations. Unsupported types (including `jsonb`, arrays, `date`, naive timestamps and unknown domains) fail closed **even if every value in that column is NULL**. Composite primary keys remain unsupported.
+
+Use JSON strings for UUID identifiers and exact NUMERIC values, JSON booleans for BOOLEAN, and ISO 8601 strings with explicit UTC offsets for TIMESTAMPTZ:
+
+```json
+{
+  "schema": "agent-proof-pack/effect-contract/v2",
+  "id": "typed_crm",
+  "watch_tables": ["customers", "invoices"],
+  "target": {
+    "table": "customers",
+    "key_column": "id",
+    "key": "36f66976-1e4c-4d34-a571-4d086e7c0c3f",
+    "expected": {
+      "status": "won",
+      "balance": "8421.37",
+      "active": true,
+      "touched_at": "2026-10-31T12:30:00+01:00"
+    },
+    "allowed_columns": ["status", "balance", "active", "touched_at"],
+    "require_change": true
+  }
+}
+```
+
+Never express NUMERIC as a JSON floating-point number: digits may be lost before verification. Numeric comparison is exact and independent of the local decimal context. TIMESTAMPTZ compares as the same UTC instant, independent of the display timezone. Existing SQLite behavior is unchanged; PostgreSQL boolean expectations must be JSON `true` or `false`.
+
+This still verifies only the operator-defined watch set, not causal attribution or production safety.
 ## Capture, act, reconcile
 
 In an **isolated trusted verifier**, configure two protected secrets: a read-only PostgreSQL DSN and a signing key. The agent must have no access to them, to the before-snapshot or to the expected-outcome contract.
@@ -73,7 +103,7 @@ This is a real database integration, not mocked SQL or a claimed customer deploy
 
 - Read-only `REPEATABLE READ` gives a consistent snapshot **within one observation**. It does not lock the entire business action from before to after, so concurrent legitimate writes may cause conservative failure and concurrent reverts can escape detection.
 - The contract scopes which tables and columns are monitored. Changes outside them (external APIs, other tables, event queues) are not covered. Schema fingerprints include column declarations, index definitions and user triggers.
-- Values supported today: null, text, integer, finite floating-point and binary. Encountering decimal, timestamp, UUID, JSON, arrays, booleans or unsupported values fails closed; broaden via an explicit typed canonicalization specification before claiming general database coverage.
+- Supported built-in values include text, integers, finite floats, binary, UUID, exact numeric, booleans and offset-aware timestamptz; unsupported types such as JSON, arrays, date, and naive timestamps still fail closed. The typed representation is verified against catalog column metadata.
 - Whole-table scans are capped at 10,000 rows per table and 200,000 cells overall. Large/high-churn tables require CDC or logical-decoding integration rather than this reference implementation.
 - The HMAC key is secret and used to create privacy-preserving fingerprints. An operator with the key and a small known-value domain can still guess values. No claim of differential privacy or anonymization is made.
 - PostgreSQL metadata is queried from catalogs with safely composed SQL identifiers via psycopg3. No arbitrary agent-provided SQL is executed by the verifier.

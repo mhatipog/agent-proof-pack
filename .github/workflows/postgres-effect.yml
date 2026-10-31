@@ -4,8 +4,10 @@ on:
     paths:
       - "agentproof/effect.py"
       - "agentproof/postgres_effect.py"
+      - "agentproof/pg_codec.py"
       - "agentproof/effect_cli.py"
       - "tests/integration_postgres.py"
+      - "tests/test_pg_codec.py"
       - ".github/workflows/postgres-effect.yml"
       - "pyproject.toml"
   push:
@@ -13,8 +15,10 @@ on:
     paths:
       - "agentproof/effect.py"
       - "agentproof/postgres_effect.py"
+      - "agentproof/pg_codec.py"
       - "agentproof/effect_cli.py"
       - "tests/integration_postgres.py"
+      - "tests/test_pg_codec.py"
       - ".github/workflows/postgres-effect.yml"
       - "pyproject.toml"
   workflow_dispatch:
@@ -60,5 +64,7 @@ jobs:
           PY
       - name: Actual PostgreSQL negative and positive tests
         run: python -m unittest discover -s tests -p "integration_postgres.py" -v
-      - name: SQLite parity and existing regressions
-        run: python -m unittest discover -s tests -p "test_effect.py" -v
+      - name: Typed codec and existing SQLite regressions
+        run: |
+          python -m unittest discover -s tests -p "test_pg_codec.py" -v
+          python -m unittest discover -s tests -p "test_effect.py" -v

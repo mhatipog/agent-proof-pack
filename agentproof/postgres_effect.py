@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from .engine import digest
+from .pg_codec import pg_type_kind, normalize_pg_value
 from .effect import (
     EffectError, _validate_contract, _cell_hash, _pk_hash,
     MAX_ROWS, MAX_CELLS, capture, reconcile,
@@ -56,6 +57,9 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
                         ORDER BY a.attnum
                     """, (oid,)).fetchall()
                     columns = [r[0] for r in columns_info]
+                    column_types = {r[0]: r[1] for r in columns_info}
+                    for declared_type in column_types.values():
+                        pg_type_kind(declared_type)  # Reject unsupported types, even when NULL.
                     if not columns or any(not IDENT.fullmatch(c) for c in columns):
                         raise EffectError('unsupported PostgreSQL column name/schema')
                     pks = conn.execute("""
@@ -101,14 +105,15 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
                             if n > MAX_ROWS:
                                 raise EffectError('watched table exceeds bounded row limit')
                             values = dict(zip(columns, row))
-                            raw_pk = values[pk]
+                            raw_pk = normalize_pg_value(values[pk], column_types[pk])
                             if raw_pk is None:
                                 raise EffectError('null primary key encountered')
                             identifier = _pk_hash(key, table, raw_pk)
                             if identifier in table_rows:
                                 raise EffectError('duplicate primary key fingerprint')
                             table_rows[identifier] = {
-                                column: _cell_hash(key, table, raw_pk, column, values[column])
+                                column: _cell_hash(key, table, raw_pk, column,
+                                                   normalize_pg_value(values[column], column_types[column]))
                                 for column in columns
                             }
                             cell_count += len(columns)
@@ -116,6 +121,7 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
                                 raise EffectError('watch set exceeds bounded cell count')
                     tables[table] = {
                         'primary_key': pk,
+                        'column_types': column_types,
                         'schema_sha256': digest([columns_info, indexes, triggers, constraints]),
                         'rows': table_rows,
                     }
@@ -130,13 +136,21 @@ def _pg_snapshot(conninfo: str, contract: dict, key: bytes, *, schema: str = 'pu
 
 def capture_postgres(conninfo: str, contract: dict, key: str, *,
                      schema: str = 'public', now: int | None = None) -> dict:
-    _validate_contract(contract)
-    return capture(None, contract, key, now=now, backend='postgresql',
-                   reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema))
+    _validate_contract(contract, backend='postgresql')
+    observed = capture(None, contract, key, now=now, backend='postgresql',
+                       reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema))
+    # Refuse malformed typed expectations *before* an agent action is attempted.
+    target = contract['target']
+    types = observed['tables'][target['table']]['column_types']
+    normalize_pg_value(target['key'], types[target['key_column']], from_contract=True)
+    for column, value in target['expected'].items():
+        normalize_pg_value(value, types[column], from_contract=True)
+    return observed
 
 
 def reconcile_postgres(conninfo: str, contract: dict, before: dict, key: str, *,
                        schema: str = 'public', now: int | None = None) -> dict:
-    _validate_contract(contract)
+    _validate_contract(contract, backend='postgresql')
     return reconcile(None, contract, before, key, now=now, backend='postgresql',
-                     reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema))
+                     reader=lambda _db, c, k: _pg_snapshot(conninfo, c, k, schema=schema),
+                     expected_normalizer=normalize_pg_value)
