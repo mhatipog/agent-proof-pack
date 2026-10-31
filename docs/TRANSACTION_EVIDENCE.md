@@ -9,12 +9,12 @@ The original [Proof of Effect](PROOF_OF_EFFECT.md) compares independent before/a
 This reuses the existing [transaction effect gate](TRANSACTION_GATE.md), not a new SQL permissions model. The sandbox installer creates three owner-controlled tables:
 
 - `action_grants`: one-use, expiring approval tied to a **database login** and exact customer/status transition
-- `row_effects`: a *BEFORE UPDATE* trigger records the actual accepted row's old/new status and PostgreSQL transaction ID; one effect per authorization
+- `row_effects`: a *AFTER UPDATE* trigger records the actual accepted row's old/new status and PostgreSQL transaction ID; one effect per authorization
 - `committed_actions`: the guarded function records the authorized action, its SQL login, and the **same** transaction ID
 
 All are written in the **same PostgreSQL transaction** as the business UPDATE. If the transaction aborts, the row, both evidence records and approval consumption roll back. An independent SELECT-only account observes the three records in a single read-only `REPEATABLE READ` snapshot. It rejects missing, unconsumed, mismatched role/key/status, or different-transaction evidence.
 
-The restricted agent cannot call the guard's owner functions except the authorized action, mint grants, or insert/alter the evidence tables. Direct customer and invoice writes are blocked by sandbox grants/triggers. The operator controls the expected contract and the verifier key separately.
+The same guard runs both BEFORE and AFTER the UPDATE, verifying the final row after other BEFORE triggers have run. A trigger that silently rewrites the approved status aborts the whole transaction instead of producing misleading proof.\n\nThe restricted agent cannot call the guard's owner functions except the authorized action, mint grants, or insert/alter the evidence tables. Direct customer and invoice writes are blocked by sandbox grants/triggers. The operator controls the expected contract and the verifier key separately.
 
 **The specific benefit:** two legitimately approved actions on *different customers* may overlap. Each can be verified by its own action ID even though a before/after whole-table snapshot of one action would reject the other's change. A later permitted update of the *same* customer does not erase the earlier commit proof. Neither case needs full-table observation.
 
