@@ -1,0 +1,56 @@
+name: independent effect proof (synthetic, signed provenance)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agentproof/effect.py'
+      - 'agentproof/effect_cli.py'
+      - 'tests/test_effect.py'
+      - 'examples/proof_of_effect/**'
+      - '.github/workflows/effect-attestation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+jobs:
+  local-witness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test independent SQLite observer
+        run: python -m unittest tests.test_effect -v
+      - name: Generate and verify real SQLite observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m agentproof.effect_cli demo --mode correct --output effect-receipt.json
+          python - <<'PY'
+          import json
+          from agentproof.effect import verify_witness
+          receipt = json.load(open('effect-receipt.json', encoding='utf8'))
+          key = 'demonstration-only-key-not-a-production-credential'
+          assert verify_witness(receipt, key)
+          assert receipt['statement']['predicate']['status'] == 'verified'
+          with open('effect-predicate.json', 'w', encoding='utf8') as f:
+              json.dump(receipt['statement']['predicate'], f, indent=2)
+          PY
+          if python -m agentproof.effect_cli demo --mode collateral >/dev/null; then
+            echo 'Unexpected approval of collateral change' >&2
+            exit 1
+          fi
+      - name: Sign synthetic artifact provenance with GitHub/Sigstore
+        uses: actions/attest@v4
+        with:
+          subject-path: effect-receipt.json
+          predicate-type: https://github.com/mhatipog/agent-proof-pack/blob/main/docs/PROOF_OF_EFFECT.md#predicate-v1
+          predicate-path: effect-predicate.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-effect-witness
+          path: effect-receipt.json
+          retention-days: 7
