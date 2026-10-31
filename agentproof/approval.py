@@ -73,3 +73,29 @@ def validate(approval, *, plan_sha256, policy, expectations, environment, key, n
         body["expectations_sha256"] != digest(expectations) or
         body["environment"] != environment):
         raise ApprovalError("plan, policy, expectation or environment changed")
+
+OUTCOME_SCHEMA = "agent-proof-pack/terraform-outcome/v1"
+
+
+def seal_outcome(result, key):
+    """Authenticate the complete outcome at the trusted executor boundary."""
+    if not isinstance(result, dict) or "state" not in result:
+        raise ApprovalError("invalid outcome")
+    body = {**result, "schema": OUTCOME_SCHEMA, "sealed_at": int(time.time())}
+    if "receipt_hmac_sha256" in body:
+        raise ApprovalError("outcome already has signature")
+    return {**body, "receipt_hmac_sha256": _mac(body, key)}
+
+
+def verify_outcome(receipt, key):
+    """Verify HMAC covering the whole outcome, including observed hashes."""
+    if not isinstance(receipt, dict) or receipt.get("schema") != OUTCOME_SCHEMA:
+        return False
+    signature = receipt.get("receipt_hmac_sha256")
+    if not isinstance(signature, str) or not HEX.fullmatch(signature):
+        return False
+    body = {k: v for k, v in receipt.items() if k != "receipt_hmac_sha256"}
+    try:
+        return hmac.compare_digest(signature, _mac(body, key))
+    except (ApprovalError, TypeError, ValueError):
+        return False
