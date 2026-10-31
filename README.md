@@ -42,7 +42,7 @@ This is read-after-write **outcome verification**, not an agent-success classifi
 python -m pip install -e '.[postgresql]'
 ```
 
-`agent-effect` can capture and reconcile observations using a PostgreSQL account granted **SELECT only** on explicitly watched tables, inside consistent read-only snapshots. The live CI test boots PostgreSQL 16 and verifies correct updates, silent no-ops, wrong rows, collateral invoice changes, unexpected inserts, RLS masking, and schema/index changes.
+`agent-effect` can capture and reconcile observations using a PostgreSQL account granted **SELECT only** on explicitly watched tables, inside consistent read-only snapshots. The live CI test boots PostgreSQL 16 and verifies correct updates, silent no-ops, wrong rows, collateral invoice changes, unexpected inserts, RLS masking, and schema/index changes. **Typed PostgreSQL columns** now include UUID keys, exact NUMERIC decimals, booleans, and timezone-aware timestamps; unsupported column types still fail closed.
 
 See [the PostgreSQL setup and CLI](docs/POSTGRESQL.md) and [its actual integration tests](tests/integration_postgres.py).
 
