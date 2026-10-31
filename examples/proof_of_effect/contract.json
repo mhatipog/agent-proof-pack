@@ -1,0 +1,20 @@
+{
+  "schema": "agent-proof-pack/sqlite-effect-contract/v1",
+  "id": "crm_status",
+  "watch_tables": [
+    "customers",
+    "invoices"
+  ],
+  "target": {
+    "table": "customers",
+    "key_column": "id",
+    "key": "C-42",
+    "expected": {
+      "status": "won"
+    },
+    "allowed_columns": [
+      "status"
+    ],
+    "require_change": true
+  }
+}

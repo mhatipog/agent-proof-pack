@@ -1,6 +1,6 @@
 # Agent Proof Pack
 
-**The AI agent said it was done. What independently proves that?**
+**The CRM update succeeded. Why did an invoice change too?**
 
 [![CI](https://github.com/mhatipog/agent-proof-pack/actions/workflows/ci.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/ci.yml)
 
@@ -8,7 +8,23 @@ A small, **dependency-free Python verification harness** for the actions AI agen
 
 > An `approve` verdict means the configured invariants pass on evidence **you supplied**. It is not a universal correctness proof. For anything consequential, collect authority and after-state from trusted systems *outside the agent* and enforce authorization at the actual write boundary.
 
-## New: actual outcomes, not just permission checks (v0.4)
+## Proof of Effect — real database verification (v0.5)
+
+An agent can return success, update the intended customer and still corrupt an unrelated invoice. The new **independent SQLite witness** detects all three outcomes: correct update, no-op and collateral change. It reads the system of record using a read-only connection; it does not trust the agent or execute its SQL.
+
+```sh
+python -m agentproof.effect_cli demo --mode correct     # verified (exit 0)
+python -m agentproof.effect_cli demo --mode no-op       # failed (exit 4)
+python -m agentproof.effect_cli demo --mode collateral  # failed (exit 4)
+```
+
+The verifier compares every row/column in explicitly watched tables, uses signed/expiring before-snapshots without plaintext values, checks the exact expected mutation, and issues an authenticated [in-toto Statement v1](https://github.com/in-toto/attestation). A trusted GitHub workflow uses [actions/attest](https://github.com/actions/attest) for standard Sigstore-backed **synthetic artifact provenance**. No new policy engine, PKI or agent framework is required.
+
+[**Read the integration contract and limits**](docs/PROOF_OF_EFFECT.md) · [22 real SQLite adversarial tests](tests/test_effect.py) · [Actual CI provenance workflow](.github/workflows/effect-attestation.yml)
+
+**Scope:** the witness proves only its selected expected outcome across the watched SQLite tables at observation time. It cannot prove causality, prevent write access, detect unwatched side effects or substitute for a production IAM boundary.
+
+## Terraform gate and signed approvals (v0.4)
 
 **Independent, deterministic assurance for consequential agent actions.**
 

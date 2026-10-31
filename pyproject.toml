@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-proof-pack"
-version = "0.4.0"
+version = "0.5.0"
 description = "Deterministic, fail-closed action verification with evidence receipts for AI agents"
 requires-python = ">=3.10"
 authors = [{name = "mhatipog"}]
@@ -13,6 +13,7 @@ classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :
 
 [project.scripts]
 agent-proof = "agentproof.cli:main"
+agent-effect = "agentproof.effect_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["agentproof*"]
