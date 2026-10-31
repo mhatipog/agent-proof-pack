@@ -33,6 +33,18 @@ jobs:
             echo "Unexpected collateral-damage approval" >&2
             exit 1
           fi
+      - name: Build and smoke-test the installable wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check build
+          python -m build --wheel
+          python -m pip install --no-deps dist/*.whl
+          agent-effect demo --mode correct >/dev/null
+          if agent-effect demo --mode collateral >/dev/null; then
+            echo "Installed package incorrectly approved collateral mutation" >&2
+            exit 1
+          fi
       - name: Tag and publish release once
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,4 +61,5 @@ jobs:
             --repo "$GH_REPO" \
             --target "$TARGET_SHA" \
             --title "v0.6.0 — SQLite and PostgreSQL effect witnesses" \
-            --notes-file docs/RELEASE_V06.md
+            --notes-file docs/RELEASE_V06.md \
+            dist/*.whl
