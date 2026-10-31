@@ -185,7 +185,12 @@ def observe_approved(conninfo, contract, key):
             "witness_hmac_sha256": _mac(secret, canonical(statement))}
 
 
-def verify_outcome(receipt, key):
+def verify_outcome(receipt, key, *, contract=None, max_age_seconds=300, now=None):
+    """Authenticate receipt; optionally bind to trusted contract and a fresh observation.
+
+    This validates witness HMAC, not the underlying database truth. The caller
+    must trust the witness runtime and must NOT take the contract from the agent.
+    """
     try:
         if not isinstance(receipt, dict) or set(receipt) != {"statement", "witness_hmac_sha256"}:
             return False
@@ -197,6 +202,23 @@ def verify_outcome(receipt, key):
             statement["predicate"].get("schema") != "agent-proof-pack/generic-transaction-outcome/v1" or
             statement["predicate"].get("status") not in ("verified", "failed")):
             return False
+        if contract is not None:
+            validate_contract(contract)
+            if statement["predicate"].get("contract_sha256") != digest(contract):
+                return False
+            expected_subject = [{"name": "postgresql/approved-row-effect",
+                                 "digest": {"sha256": digest(contract)}}]
+            if statement.get("subject") != expected_subject:
+                return False
+            if (type(max_age_seconds) is not int or max_age_seconds < 0
+                    or max_age_seconds > 86400):
+                return False
+            when = datetime.fromisoformat(statement["predicate"]["observed_at"])
+            if when.tzinfo is None or when.utcoffset() is None:
+                return False
+            age = (datetime.now(timezone.utc) if now is None else now) - when
+            if not 0 <= age.total_seconds() <= max_age_seconds:
+                return False
         mac = receipt["witness_hmac_sha256"]
         return (isinstance(mac, str) and bool(HEX.fullmatch(mac)) and
                 hmac.compare_digest(mac, _mac(_secret(key), canonical(statement))))
@@ -220,6 +242,8 @@ def main(argv=None):
     check = sub.add_parser("check", help="authenticate a previously captured receipt")
     check.add_argument("--receipt", required=True)
     check.add_argument("--key-env", required=True)
+    check.add_argument("--contract", required=True, help="trusted independently approved contract")
+    check.add_argument("--max-age-seconds", type=int, default=300)
     args = parser.parse_args(argv)
     try:
         if args.command == "apply":
@@ -240,9 +264,16 @@ def main(argv=None):
         else:
             with open(args.receipt, encoding="utf8") as f:
                 result = json.load(f)
-            good = verify_outcome(result, os.environ.get(args.key_env))
-            print("VALID" if good else "INVALID")
-            return 0 if good else 4
+            with open(args.contract, encoding="utf8") as f:
+                contract = json.load(f)
+            good = verify_outcome(
+                result, os.environ.get(args.key_env), contract=contract,
+                max_age_seconds=args.max_age_seconds)
+            state = result["statement"]["predicate"]["status"] if good else "invalid"
+            ok = good and state == "verified"
+            print("VERIFIED" if ok else
+                  "AUTHENTICATED_FAILURE" if good else "INVALID")
+            return 0 if ok else 4
         print(json.dumps(result, indent=2))
         if args.command == "apply":
             return 0
