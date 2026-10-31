@@ -11,6 +11,8 @@ on:
     branches: [main]
     paths:
       - "tests/integration_chinook_incident.py"
+      - "tests/integration_chinook_generic_gate.py"
+      - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
       - "docs/CHINOOK_INCIDENT_LAB.md"
   workflow_dispatch:
