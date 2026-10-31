@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from .engine import digest
-from .approval import validate as validate_approval
+from .approval import validate as validate_approval, seal_outcome
 from .attest import observe_files, validate_expectations
 
 POLICY_SCHEMA = "agent-proof-pack/terraform-policy/v1"
@@ -224,6 +224,8 @@ def apply_saved_plan(path: Path, policy: dict, *, approval: dict, approval_key: 
     validate_approval(approval, plan_sha256=plan_hash, policy=policy,
                       expectations=expectations, environment=environment,
                       key=approval_key)
+    def finish(result):
+        return seal_outcome({**result, "approval_nonce": approval["nonce"]}, approval_key)
     with tempfile.TemporaryDirectory(prefix="agentproof-tf-") as folder:
         snapshot = Path(folder) / "reviewed.tfplan"
         with path.open("rb") as reader, snapshot.open("xb") as writer:
@@ -232,7 +234,7 @@ def apply_saved_plan(path: Path, policy: dict, *, approval: dict, approval_key: 
         review = review_saved_plan(snapshot, policy, expected_sha256=plan_hash,
                                    terraform_bin=terraform_bin)
         if review["verdict"] != "approve":
-            return {"state": "refused", "executed": False, "review": review}
+            return finish({"state": "refused", "executed": False, "review": review})
         if saved_plan_sha256(snapshot) != plan_hash:
             raise TerraformGateError("snapshot changed after review")
         # Fail if the authorization expired while Terraform was inspected.
@@ -245,16 +247,16 @@ def apply_saved_plan(path: Path, policy: dict, *, approval: dict, approval_key: 
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                   check=False, timeout=3600)
         except (OSError, subprocess.TimeoutExpired):
-            return {"state": "indeterminate_execution", "executed": True, "review": review}
+            return finish({"state": "indeterminate_execution", "executed": True, "review": review})
         if proc.returncode != 0:
-            return {"state": "apply_failed_or_partial", "executed": True,
-                    "return_code": proc.returncode, "review": review}
+            return finish({"state": "apply_failed_or_partial", "executed": True,
+                    "return_code": proc.returncode, "review": review})
         try:
             observed = observe_files(observe_root, expectations)
         except (OSError, ValueError):
-            return {"state": "unverifiable_after_action", "executed": True, "review": review}
-        return {"state": "verified" if observed["state"] == "verified"
+            return finish({"state": "unverifiable_after_action", "executed": True, "review": review})
+        return finish({"state": "verified" if observed["state"] == "verified"
                 else "postcondition_failed", "executed": True,
                 "return_code": proc.returncode, "review": review,
                 "observation": observed,
-                "approver": approval["approver"], "environment": environment}
+                "approver": approval["approver"], "environment": environment})
