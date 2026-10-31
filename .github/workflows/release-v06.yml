@@ -1,0 +1,52 @@
+name: Publish verified v0.6 GitHub release
+on:
+  workflow_run:
+    workflows:
+      - "PostgreSQL effect witness (real database, read-only verifier)"
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reverify source before publishing immutable release
+        run: |
+          python -m unittest discover -s tests -v
+          python -m agentproof.effect_cli demo --mode correct >/dev/null
+          if python -m agentproof.effect_cli demo --mode collateral >/dev/null; then
+            echo "Unexpected collateral-damage approval" >&2
+            exit 1
+          fi
+      - name: Tag and publish release once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.6.0 --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "v0.6.0 already exists; refusing to move tag."
+            exit 0
+          fi
+          gh release create v0.6.0 \
+            --repo "$GH_REPO" \
+            --target "$TARGET_SHA" \
+            --title "v0.6.0 — SQLite and PostgreSQL effect witnesses" \
+            --notes-file docs/RELEASE_V06.md
