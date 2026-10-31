@@ -26,6 +26,19 @@ CREATE TABLE agentproof_guard.active_actions (
     PRIMARY KEY (backend_pid, transaction_id)
 );
 
+-- A receipt is visible to a separately privileged observer only after the
+-- surrounding transaction commits. An exception rolls the receipt back too.
+-- This is an in-database event record, not an externally signed audit log.
+CREATE TABLE agentproof_guard.committed_actions (
+    action_id uuid PRIMARY KEY REFERENCES agentproof_guard.action_grants(action_id),
+    transaction_id bigint NOT NULL,
+    executor_role name NOT NULL,
+    customer_id text NOT NULL,
+    from_status text NOT NULL,
+    to_status text NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT pg_catalog.clock_timestamp()
+);
+
 REVOKE ALL ON ALL TABLES IN SCHEMA agentproof_guard FROM PUBLIC;
 
 -- Any write to an invoice is outside the approved customer-status action.
@@ -120,6 +133,12 @@ BEGIN
     UPDATE agentproof_guard.action_grants
        SET consumed_at = pg_catalog.clock_timestamp()
      WHERE action_id = request_id;
+
+    -- Only visible after the same transaction commits successfully.
+    INSERT INTO agentproof_guard.committed_actions
+      (action_id, transaction_id, executor_role, customer_id, from_status, to_status)
+    VALUES (request_id, pg_catalog.txid_current(), SESSION_USER,
+            grant_record.customer_id, grant_record.from_status, grant_record.to_status);
 
     RETURN 'applied';
 END;
