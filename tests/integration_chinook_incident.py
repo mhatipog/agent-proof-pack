@@ -105,6 +105,24 @@ class ChinookIncidentReconstruction(unittest.TestCase):
         self.assertEqual(self.outcome()["status"], "failed")
         self.assertEqual(self.customer_email(), self.original_email)
 
+    def test_operator_code_freeze_is_a_real_database_permission(self):
+        # A natural-language "freeze" alone is not an access-control primitive.
+        # Revoke the writer's remaining mutation privilege and prove the DB
+        # itself rejects the formerly permitted update.
+        with psycopg.connect(ADMIN) as conn:
+            conn.execute("REVOKE UPDATE(email) ON public.customer FROM incident_prod_actor")
+        try:
+            with self.assertRaises(psycopg.Error):
+                with psycopg.connect(WRITER) as conn:
+                    conn.execute(
+                        "UPDATE public.customer SET email=%s WHERE customer_id=1",
+                        (EXPECTED_EMAIL,))
+            self.assertEqual(self.customer_email(), self.original_email)
+            self.assertEqual(self.outcome()["status"], "failed")
+        finally:
+            with psycopg.connect(ADMIN) as conn:
+                conn.execute("GRANT UPDATE(email) ON public.customer TO incident_prod_actor")
+
     def test_staging_agent_cannot_connect_to_production(self):
         with self.assertRaises(psycopg.Error):
             psycopg.connect(STAGING, connect_timeout=3)
