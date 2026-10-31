@@ -21,20 +21,21 @@ The run uses three independent PostgreSQL identities:
 | `incident_witness_reader` | May only SELECT `customer` and `invoice_line`; cannot change them |
 | `postgres` bootstrap owner | Separately privileged installer/fixture reset; **can bypass enforcement** and therefore must not be the agent |
 
-## Ten real SQL checks
+## Eleven real SQL checks
 
 The [live CI workflow](../.github/workflows/chinook-incident.yml) executes these tests against the full upstream store database; see [the test code](../tests/integration_chinook_incident.py).
 
 1. A correctly scoped customer email change succeeds, and the independent before/after witness produces an authenticated **verified** statement.
 2. An agent reporting success without changing the database fails outcome verification.
-3. A staging-only agent is **denied a connection** to production.
-4. A production-scoped agent attempts `DELETE FROM public.customer` and gets a PostgreSQL privilege error; rows remain.
-5. `TRUNCATE TABLE public.customer CASCADE` is refused; rows remain.
-6. `DROP TABLE public.customer CASCADE` is refused; the table remains.
-7. An allowed customer update followed by an unauthorized invoice-line change in the **same transaction** fails and **both changes roll back**.
-8. A privileged owner bypasses those grants and commits a customer update **plus invoice-line corruption**; the separate witness refuses to verify the claimed clean outcome.
-9. A privileged owner changes an additional customer; the independent witness detects the unexpected effect.
-10. The observer account itself cannot delete invoice lines.
+3. A **code freeze** enforced by revoking UPDATE permission blocks a previously authorized write; data stays unchanged.
+4. A staging-only agent is **denied a connection** to production.
+5. A production-scoped agent attempts `DELETE FROM public.customer` and gets a PostgreSQL privilege error; rows remain.
+6. `TRUNCATE TABLE public.customer CASCADE` is refused; rows remain.
+7. `DROP TABLE public.customer CASCADE` is refused; the table remains.
+8. An allowed customer update followed by an unauthorized invoice-line change in the **same transaction** fails and **both changes roll back**.
+9. A privileged owner bypasses those grants and commits a customer update **plus invoice-line corruption**; the separate witness refuses to verify the claimed clean outcome.
+10. A privileged owner changes an additional customer; the independent witness detects the unexpected effect.
+11. The observer account itself cannot delete invoice lines.
 
 Those are real PostgreSQL operations, not assertions against simulated agent tool outputs. Failures are meaningful only under the deliberately scoped privileges; an agent carrying the database owner's credentials is **not** stopped.
 
