@@ -37,6 +37,7 @@ Source = "https://github.com/mhatipog/agent-proof-pack"
 [project.scripts]
 agent-proof = "agentproof.cli:main"
 agent-effect = "agentproof.effect_cli:main"
+agent-guarded = "agentproof.generic_cli:main"
 agent-tx-effect = "agentproof.tx_effect:main"
 agent-tx-verify = "agentproof.tx_receipt_verify:main"
 
