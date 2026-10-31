@@ -8,6 +8,18 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## One-command live transaction proof (disposable PostgreSQL)
+
+For a real, completely isolated demonstration with **two concurrent approved customer updates**, independently authenticated outcomes, and a forbidden invoice write, run from the repository root:
+
+```sh
+python -m pip install -e '.[postgresql]'
+python -m scripts.tx_quickstart
+```
+
+This starts a randomly named, disposable `postgres:16` Docker container on a randomly assigned **localhost-only** port, creates separate approver/actor/witness identities, verifies two committed actions and rejects a direct unauthorized invoice modification. The container is deleted on completion, and **no existing database or customer credentials are used**. Requires a working local Docker daemon. `--show-receipt` prints a value-redacted, demonstration-only signed outcome bundle; its ephemeral signing key is intentionally discarded.
+
+Use [`agent-tx-effect`](docs/TRANSACTION_EVIDENCE.md) with protected reader credentials to verify an actual existing sandbox action, and `agent-tx-verify` to authenticate a saved receipt later using the separately held verifier key.
 ## Transaction effect gate (experimental PostgreSQL sandbox)
 
 The existing witness detects unintended changes **after** a database operation. The new [transaction effect gate](docs/TRANSACTION_GATE.md) demonstrates preventing an unintended change **before commit**.
