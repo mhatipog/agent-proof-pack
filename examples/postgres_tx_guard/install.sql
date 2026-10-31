@@ -148,6 +148,21 @@ BEGIN
             USING ERRCODE = '42501';
     END IF;
 
+    -- An accidentally disabled AFTER proof trigger must fail closed before
+    -- approval consumption or function success. The trigger enforces final
+    -- stored tuple equality, while its PK rules out a second accepted effect.
+    IF NOT EXISTS (
+        SELECT 1 FROM agentproof_guard.row_effects AS e
+        WHERE e.action_id = request_id
+          AND e.transaction_id = pg_catalog.txid_current()
+          AND e.customer_id = grant_record.customer_id
+          AND e.from_status = grant_record.from_status
+          AND e.to_status = grant_record.to_status
+    ) THEN
+        RAISE EXCEPTION 'effect gate: verified row-effect event missing'
+            USING ERRCODE = '42501';
+    END IF;
+
     DELETE FROM agentproof_guard.active_actions
      WHERE backend_pid = pg_catalog.pg_backend_pid()
        AND transaction_id = pg_catalog.txid_current()
