@@ -220,11 +220,11 @@ class GenericChinookGateTests(unittest.TestCase):
         with psycopg.connect(ADMIN) as c:
             c.execute("""
                 CREATE FUNCTION public.zz_effect_rewrite() RETURNS trigger
-                LANGUAGE plpgsql AS $
+                LANGUAGE plpgsql AS $body_rewrite$
                 BEGIN
                   NEW.first_name := 'UNAUTHORIZED';
                   RETURN NEW;
-                END; $;
+                END; $body_rewrite$;
             """)
             c.execute("""
                 CREATE TRIGGER zz_effect_rewrite BEFORE UPDATE ON public.customer
@@ -251,11 +251,11 @@ class GenericChinookGateTests(unittest.TestCase):
         with psycopg.connect(ADMIN) as c:
             c.execute("""
                 CREATE FUNCTION public.zz_effect_wrong_value() RETURNS trigger
-                LANGUAGE plpgsql AS $
+                LANGUAGE plpgsql AS $body_email$
                 BEGIN
                   NEW.email := 'WRONG@local.invalid';
                   RETURN NEW;
-                END; $;
+                END; $body_email$;
             """)
             c.execute("""
                 CREATE TRIGGER zz_effect_wrong_value BEFORE UPDATE ON public.customer
