@@ -98,14 +98,16 @@ BEGIN
             USING ERRCODE = '42501';
     END IF;
 
-    -- Do not rely on the executor's "applied" return value: this trigger
-    -- writes evidence of the row transition it actually accepted. Its event
-    -- and the separately written committed_actions receipt are atomic with
-    -- the business mutation, and invisible to other sessions pre-commit.
-    INSERT INTO agentproof_guard.row_effects
-      (action_id, transaction_id, customer_id, from_status, to_status)
-    VALUES (grant_record.action_id, pg_catalog.txid_current(),
-            OLD.id, OLD.status, NEW.status);
+    -- Validate twice: BEFORE disallows the proposed unauthorized write.
+    -- AFTER observes the FINAL stored NEW row after all BEFORE row triggers.
+    -- A later BEFORE trigger must not silently change the approved outcome.
+    -- Its effect record is atomic with the write and the commit receipt.
+    IF TG_WHEN = 'AFTER' THEN
+        INSERT INTO agentproof_guard.row_effects
+          (action_id, transaction_id, customer_id, from_status, to_status)
+        VALUES (grant_record.action_id, pg_catalog.txid_current(),
+                OLD.id, OLD.status, NEW.status);
+    END IF;
     RETURN NEW;
 END;
 $guard$;
@@ -167,6 +169,11 @@ $apply$;
 
 CREATE TRIGGER agentproof_customer_write
 BEFORE INSERT OR UPDATE OR DELETE ON public.customers
+FOR EACH ROW EXECUTE FUNCTION agentproof_guard.guard_customer();
+
+-- AFTER trigger checks the final stored tuple and emits the event once.
+CREATE TRIGGER agentproof_customer_effect
+AFTER UPDATE ON public.customers
 FOR EACH ROW EXECUTE FUNCTION agentproof_guard.guard_customer();
 
 CREATE TRIGGER agentproof_invoice_write
