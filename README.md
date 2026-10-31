@@ -8,6 +8,23 @@ A small, **dependency-free Python verification harness** for the actions AI agen
 
 > An `approve` verdict means the configured invariants pass on evidence **you supplied**. It is not a universal correctness proof. For anything consequential, collect authority and after-state from trusted systems *outside the agent* and enforce authorization at the actual write boundary.
 
+## Now useful with real Terraform plans (v0.3)
+
+**A production incident is not a unit-test problem. It's an execution-boundary problem.** Agent Proof Pack now accepts an actual saved Terraform binary plan, interprets its resource changes, and returns a fail-closed verdict *before* an agent gets to run apply.
+
+Try the two included **sanitized, offline** plans with no cloud account or Terraform installation:
+
+```bash
+python -m agentproof terraform --plan-json examples/terraform/safe-plan.json --policy examples/terraform/policy.json
+# approve (exit 0)
+python -m agentproof terraform --plan-json examples/terraform/destructive-plan.json --policy examples/terraform/policy.json
+# block (exit 4)
+```
+
+For **real plans**, use `terraform plan -out=tfplan`, then `python -m agentproof terraform --plan tfplan --policy your-policy.json`. A reusable read-only [GitHub Action](action.yml) is included. There is also an explicit, approval-hash-bound `--execute` wrapper, but it **does not claim post-apply verification**. The example policy is deliberately limited to the illustrative `terraform_data` resource type; supply your own trusted policy for anything else.
+
+[**Step-by-step Terraform integration and security limits**](docs/TERRAFORM_GATE.md) · [Incident-grounded controls](docs/INCIDENT_EVIDENCE.md) · [Propose a sandbox pilot](https://github.com/mhatipog/agent-proof-pack/issues/new?template=pilot.yml)
+
 ## See the failure in 30 seconds
 
 ```bash
