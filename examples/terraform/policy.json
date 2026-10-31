@@ -1,0 +1,20 @@
+{
+  "schema": "agent-proof-pack/terraform-policy/v1",
+  "id": "example-allow-terraform-data-only",
+  "allowed_resource_types": [
+    "terraform_data"
+  ],
+  "allowed_actions": [
+    "no-op",
+    "read",
+    "create",
+    "update"
+  ],
+  "max_changed_resources": 5,
+  "protected_addresses": [
+    "terraform_data.critical"
+  ],
+  "allowed_output_names": [],
+  "allow_resource_drift": false,
+  "allow_destructive_addresses": []
+}

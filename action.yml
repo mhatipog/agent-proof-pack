@@ -1,0 +1,29 @@
+name: Agent Proof Pack - Terraform Saved Plan Review
+description: Fail-closed review of a saved Terraform binary plan; never executes apply.
+inputs:
+  plan:
+    description: Path to the saved binary plan, created with terraform plan -out
+    required: true
+  policy:
+    description: Path to independently controlled Terraform policy JSON
+    required: true
+  approved-sha256:
+    description: Optional independently approved SHA-256 of the saved plan
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Review saved Terraform plan
+      shell: bash
+      env:
+        APP_PLAN: ${{ inputs.plan }}
+        APP_POLICY: ${{ inputs.policy }}
+        APP_SHA: ${{ inputs.approved-sha256 }}
+      run: |
+        export PYTHONPATH="$GITHUB_ACTION_PATH${PYTHONPATH:+:$PYTHONPATH}"
+        if [ -n "$APP_SHA" ]; then
+          python -m agentproof terraform --plan "$APP_PLAN" --policy "$APP_POLICY" --approved-sha256 "$APP_SHA"
+        else
+          python -m agentproof terraform --plan "$APP_PLAN" --policy "$APP_POLICY"
+        fi

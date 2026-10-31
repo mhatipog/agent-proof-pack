@@ -1,0 +1,25 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.10.0",
+  "errored": false,
+  "applyable": true,
+  "complete": true,
+  "resource_changes": [
+    {
+      "address": "terraform_data.example",
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "example",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "input": "demo"
+        }
+      }
+    }
+  ],
+  "output_changes": {}
+}

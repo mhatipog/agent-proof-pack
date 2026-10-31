@@ -22,3 +22,11 @@ jobs:
         run: python -m agentproof suite
       - name: Incident-derived regression scenarios
         run: python -m agentproof suite --cases examples/incident_cases.json
+      - name: Terraform safe synthetic plan is accepted
+        run: python -m agentproof terraform --plan-json examples/terraform/safe-plan.json --policy examples/terraform/policy.json > /dev/null
+      - name: Terraform destructive synthetic plan is rejected
+        run: |
+          if python -m agentproof terraform --plan-json examples/terraform/destructive-plan.json --policy examples/terraform/policy.json > /dev/null; then
+            echo "Unexpected unsafe Terraform approval" >&2
+            exit 1
+          fi
