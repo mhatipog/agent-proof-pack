@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'agentproof/terraform_guard.py'
+      - 'agentproof/approval.py'
+      - 'agentproof/attest.py'
+      - 'tests/test_approval_observer.py'
       - 'agentproof/cli.py'
       - 'examples/terraform/**'
       - 'tests/test_terraform_guard.py'
@@ -39,8 +42,10 @@ jobs:
           # A self-approved hash is ONLY acceptable in this synthetic test;
           # real deployments must require an independent, protected approval.
           test_digest="$(sha256sum create.tfplan | cut -d' ' -f1)"
-          PYTHONPATH="$root" python -m agentproof terraform --plan create.tfplan --policy "$root/examples/terraform/policy.json" --approved-sha256 "$test_digest" --execute > apply-result.json
-          grep -q '"state": "apply_completed_unverified"' apply-result.json
+          PYTHONPATH="$root" python -m agentproof terraform --plan create.tfplan --policy "$root/examples/terraform/policy.json" --approved-sha256 "$test_digest" > approved-review.json
+          grep -q '"verdict": "approve"' approved-review.json
+          # Local built-in resource only, not a production apply.
+          terraform apply -input=false create.tfplan > /dev/null
           sed -i 's/triggers_replace = "v1"/triggers_replace = "v2"/' main.tf
           terraform plan -input=false -out=replacement.tfplan
           if PYTHONPATH="$root" python -m agentproof terraform --plan replacement.tfplan --policy "$root/examples/terraform/policy.json" > reject-review.json; then
@@ -48,3 +53,43 @@ jobs:
             exit 1
           fi
           grep -q '"verdict": "block"' reject-review.json
+
+      - name: Prove signed approval and filesystem outcome with REAL local_file provider
+        shell: bash
+        env:
+          # Public ephemeral TEST-ONLY key. Actual approver secrets must be held
+          # by a separate protected review service, not this CI job or an agent.
+          TEST_APPROVAL_KEY: 'synthetic-ci-only-signing-key-no-secret-0123456789abcdef'
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          cp "$root/examples/terraform/live-file/main.tf" "$work/main.tf"
+          cd "$work"
+          terraform init -backend=false -input=false
+          terraform plan -input=false -out=saved.tfplan
+          PYTHONPATH="$root" python -m agentproof terraform --plan saved.tfplan --policy "$root/examples/terraform/live-file/policy.json" > preview.json
+          grep -q '"verdict": "approve"' preview.json
+          # This issuance is only a synthetic demonstration: a real system
+          # must separate the approval job and protect its HMAC key.
+          PYTHONPATH="$root" python -m agentproof issue-terraform-approval \
+            --plan saved.tfplan --policy "$root/examples/terraform/live-file/policy.json" \
+            --expectations "$root/examples/terraform/live-file/expectations.json" \
+            --environment sandbox --approver ci-synthetic-reviewer \
+            --key-env TEST_APPROVAL_KEY --output signed-approval.json
+          PYTHONPATH="$root" python -m agentproof terraform \
+            --plan saved.tfplan --policy "$root/examples/terraform/live-file/policy.json" \
+            --approval signed-approval.json --approval-key-env TEST_APPROVAL_KEY \
+            --environment sandbox \
+            --expectations "$root/examples/terraform/live-file/expectations.json" \
+            --observe-root "$work" --execute > proof.json
+          grep -q '"state": "verified"' proof.json
+          test "$(cat proof.txt)" = "agent-proof-v04-ok"
+          echo 'postflight-tampered' > proof.txt
+          if PYTHONPATH="$root" python -m agentproof observe-files \
+            --root "$work" --expectations "$root/examples/terraform/live-file/expectations.json" > mismatch.json; then
+            echo 'SAFETY FAILURE: changed real file was certified as correct' >&2
+            exit 1
+          fi
+          grep -q '"state": "mismatch"' mismatch.json
