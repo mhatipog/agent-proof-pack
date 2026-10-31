@@ -48,25 +48,25 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $guard$
 DECLARE
-    authorization agentproof_guard.action_grants%ROWTYPE;
+    grant_record agentproof_guard.action_grants%ROWTYPE;
 BEGIN
     IF TG_OP <> 'UPDATE' THEN
         RAISE EXCEPTION 'effect gate: customer insert/delete denied'
             USING ERRCODE = '42501';
     END IF;
 
-    SELECT g.* INTO authorization
+    SELECT g.* INTO grant_record
       FROM agentproof_guard.active_actions AS ctx
       JOIN agentproof_guard.action_grants AS g ON g.action_id = ctx.action_id
      WHERE ctx.backend_pid = pg_catalog.pg_backend_pid()
        AND ctx.transaction_id = pg_catalog.txid_current();
 
-    IF NOT FOUND OR authorization.consumed_at IS NOT NULL
-       OR authorization.expires_at <= pg_catalog.clock_timestamp()
-       OR OLD.id IS DISTINCT FROM authorization.customer_id
+    IF NOT FOUND OR grant_record.consumed_at IS NOT NULL
+       OR grant_record.expires_at <= pg_catalog.clock_timestamp()
+       OR OLD.id IS DISTINCT FROM grant_record.customer_id
        OR NEW.id IS DISTINCT FROM OLD.id
-       OR OLD.status IS DISTINCT FROM authorization.from_status
-       OR NEW.status IS DISTINCT FROM authorization.to_status
+       OR OLD.status IS DISTINCT FROM grant_record.from_status
+       OR NEW.status IS DISTINCT FROM grant_record.to_status
        OR (pg_catalog.to_jsonb(NEW) - 'status')
           IS DISTINCT FROM (pg_catalog.to_jsonb(OLD) - 'status') THEN
         RAISE EXCEPTION 'effect gate: customer change outside exact grant'
@@ -85,15 +85,15 @@ RETURNS text LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $apply$
 DECLARE
-    authorization agentproof_guard.action_grants%ROWTYPE;
+    grant_record agentproof_guard.action_grants%ROWTYPE;
     changed integer;
 BEGIN
-    SELECT * INTO authorization
+    SELECT * INTO grant_record
       FROM agentproof_guard.action_grants
      WHERE action_id = request_id FOR UPDATE;
-    IF NOT FOUND OR authorization.consumed_at IS NOT NULL
-       OR authorization.expires_at <= pg_catalog.clock_timestamp()
-       OR authorization.executor_role <> SESSION_USER THEN
+    IF NOT FOUND OR grant_record.consumed_at IS NOT NULL
+       OR grant_record.expires_at <= pg_catalog.clock_timestamp()
+       OR grant_record.executor_role <> SESSION_USER THEN
         RAISE EXCEPTION 'effect gate: grant missing, expired or already used'
             USING ERRCODE = '42501';
     END IF;
@@ -102,9 +102,9 @@ BEGIN
     VALUES (pg_catalog.pg_backend_pid(), pg_catalog.txid_current(), request_id);
 
     UPDATE public.customers
-       SET status = authorization.to_status
-     WHERE id = authorization.customer_id
-       AND status = authorization.from_status;
+       SET status = grant_record.to_status
+     WHERE id = grant_record.customer_id
+       AND status = grant_record.from_status;
 
     GET DIAGNOSTICS changed = ROW_COUNT;
     IF changed <> 1 THEN
