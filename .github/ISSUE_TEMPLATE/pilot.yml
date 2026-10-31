@@ -1,0 +1,53 @@
+name: Pilot a workflow verification pack
+description: Propose a real AI-agent workflow to verify (no confidential data)
+title: "[Pilot] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us about the workflow and what could go wrong.
+        **Never paste real customer records, API keys, private screenshots, financial data or internal agent traces.**
+        We can discuss evidence handling and any NDA privately before exchanging data.
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Workflow category
+      options:
+        - Invoice / finance back office
+        - CRM / sales
+        - Email / customer support
+        - Coding / CI / databases
+        - Data pipelines / reporting
+        - Procurement / operations
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: action
+    attributes:
+      label: What does the agent actually change?
+      description: Describe the operation generically; don't paste any real records.
+      placeholder: The agent updates CRM opportunities and marks them won or lost.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Which system can independently confirm the result?
+      placeholder: CRM API, database read-only query, payment provider receipt...
+    validations:
+      required: false
+  - type: textarea
+    id: bad_outcome
+    attributes:
+      label: Which silent mistake would matter most?
+      placeholder: Agent claims success, but the target status did not change.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Data-handling acknowledgment
+      options:
+        - label: This issue contains no customer data, secret tokens or private system traces.
+          required: true
