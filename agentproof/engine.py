@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
-VERSION = "0.2.0"
+VERSION = "0.4.0"
 _MISSING = object()
 _KINDS = {
     "equals", "exists_in", "required", "decimal_total", "max_amount",
