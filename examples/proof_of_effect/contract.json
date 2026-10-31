@@ -1,5 +1,5 @@
 {
-  "schema": "agent-proof-pack/sqlite-effect-contract/v1",
+  "schema": "agent-proof-pack/effect-contract/v2",
   "id": "crm_status",
   "watch_tables": [
     "customers",
