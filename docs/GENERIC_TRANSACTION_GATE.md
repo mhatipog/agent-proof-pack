@@ -58,15 +58,14 @@ The example only works if the operator's exact original value matches the databa
 
 The agent does not receive SQL write credentials, arbitrary SQL execution or an
 authorization-issuing API. A trusted operator provisions the grant separately.
-The only actor-side tool input is the already approved UUID:
+The only actor-side tool input is the already approved UUID. The actor command reads credentials from exactly one fixed `AGENTPROOF_ACTOR_DSN` variable; the agent cannot choose another environment secret:
 
 ```sh
 pip install -e '.[postgresql]'
 # Set these in separately protected processes, NOT in the same agent shell:
 export AGENTPROOF_ACTOR_DSN='postgresql://incident_prod_actor:...@host/db'
 agent-guarded apply \
-  --action-id 11111111-1111-4111-8111-111111111111 \
-  --dsn-env AGENTPROOF_ACTOR_DSN
+  --action-id 11111111-1111-4111-8111-111111111111
 # "submitted_unverified" is NOT evidence of a correct final outcome.
 ```
 
