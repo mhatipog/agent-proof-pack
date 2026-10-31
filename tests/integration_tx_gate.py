@@ -144,6 +144,27 @@ class TransactionGateTests(unittest.TestCase):
             with psycopg.connect(ADMIN) as c:
                 c.execute("REVOKE UPDATE ON public.customers FROM effect_actor")
 
+    def test_approved_function_followed_by_unapproved_write_rolls_back_both(self):
+        # An actor might wrap the approved function and another statement
+        # in one caller-managed transaction. The private context must be
+        # cleared before the function returns, not only at final COMMIT.
+        action = self.grant()
+        with psycopg.connect(ADMIN) as c:
+            c.execute("GRANT UPDATE ON public.customers TO effect_actor")
+        try:
+            with self.assertRaises(psycopg.Error):
+                with psycopg.connect(AGENT) as c:
+                    self.assertEqual(c.execute(
+                        "SELECT agentproof_guard.apply_customer_status(%s)",
+                        (action,)).fetchone()[0], "applied")
+                    c.execute("UPDATE public.customers SET status='won' WHERE id='C-99'")
+            self.assertEqual(self.state(), ("open", 100))
+            self.assertFalse(self.consumed(action))
+            self.assertIsNone(self.committed(action))
+        finally:
+            with psycopg.connect(ADMIN) as c:
+                c.execute("REVOKE UPDATE ON public.customers FROM effect_actor")
+
     def test_one_time_grant_replay_denied(self):
         action = self.grant()
         self.act(action)
