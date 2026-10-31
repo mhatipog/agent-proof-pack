@@ -210,7 +210,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     apply = sub.add_parser("apply", help="agent-side, only a preapproved UUID; no agent SQL")
     apply.add_argument("--action-id", required=True)
-    apply.add_argument("--dsn-env", required=True, help="protected EXECUTE-only database DSN environment variable")
+    # Actor credentials come from exactly one fixed protected variable; an
+    # untrusted agent cannot choose another environment secret to use.
     obs = sub.add_parser("observe", help="trusted verifier: read-only after-state and transaction record")
     obs.add_argument("--contract", required=True)
     obs.add_argument("--dsn-env", required=True)
@@ -222,7 +223,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "apply":
-            result = apply_approved(os.environ.get(args.dsn_env), args.action_id)
+            result = apply_approved(os.environ.get("AGENTPROOF_ACTOR_DSN"), args.action_id)
         elif args.command == "observe":
             if args.dsn_env == args.key_env:
                 raise EffectError("reader DSN and witness key must be separate")
