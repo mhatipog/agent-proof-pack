@@ -165,8 +165,12 @@ def _snapshot(db: Path, contract: dict, key: bytes) -> dict:
                 "SELECT type, name, sql FROM sqlite_master "
                 "WHERE tbl_name=? AND type IN ('index', 'trigger') "
                 "ORDER BY type, name", (table,)).fetchall()
+            table_definition = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table,)).fetchone()
+            foreign_keys = conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
             found[table] = {'primary_key': pk_name,
-                            'schema_sha256': digest([info, ddl_objects]),
+                            'schema_sha256': digest([info, ddl_objects, table_definition, foreign_keys]),
                             'rows': table_rows}
         conn.commit()
         return found
