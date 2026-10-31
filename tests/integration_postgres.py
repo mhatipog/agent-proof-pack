@@ -108,6 +108,105 @@ class PostgreSQLRealIntegration(unittest.TestCase):
         self.assertNotIn('I-1', blob)
         self.assertNotIn("'won'", blob)
 
+    def prepare_typed_schema(self):
+        """Realistic CRM + invoice tables, with independently readable PG types."""
+        import uuid
+        from datetime import datetime, timezone
+        from decimal import Decimal
+        customer_id = uuid.UUID("36f66976-1e4c-4d34-a571-4d086e7c0c3f")
+        invoice_id = uuid.UUID("7dd57212-76d2-49d8-8bc7-3724f42e5d90")
+        with psycopg.connect(ADMIN) as conn:
+            conn.execute("DROP TABLE public.customers CASCADE")
+            conn.execute("DROP TABLE public.invoices CASCADE")
+            conn.execute("""
+              CREATE TABLE public.customers (
+                id UUID PRIMARY KEY, status TEXT NOT NULL,
+                balance NUMERIC(80,30) NOT NULL, active BOOLEAN NOT NULL,
+                touched_at TIMESTAMPTZ NOT NULL
+              )""")
+            conn.execute("""
+              CREATE TABLE public.invoices (
+                id UUID PRIMARY KEY, amount NUMERIC(80,30) NOT NULL
+              )""")
+            conn.execute("""
+              INSERT INTO public.customers
+                (id,status,balance,active,touched_at) VALUES (%s,%s,%s,%s,%s)
+              """, (customer_id, "open", Decimal("1.000"), False,
+                    datetime(2026, 10, 30, 10, 0, tzinfo=timezone.utc)))
+            conn.execute("INSERT INTO public.invoices VALUES (%s,%s)",
+                         (invoice_id, Decimal("100.00")))
+            conn.execute("GRANT SELECT ON public.customers, public.invoices TO witness_reader")
+        contract = {
+            "schema": "agent-proof-pack/effect-contract/v2",
+            "id": "crm_typed", "watch_tables": ["customers", "invoices"],
+            "target": {
+                "table": "customers", "key_column": "id", "key": str(customer_id),
+                "expected": {
+                    "status": "won", "balance": "8421.370000000000000000000000000000",
+                    "active": True, "touched_at": "2026-10-31T12:30:00+01:00",
+                },
+                "allowed_columns": ["status", "balance", "active", "touched_at"],
+                "require_change": True,
+            },
+        }
+        return customer_id, invoice_id, contract, capture_postgres(READER, contract, KEY, now=1000)
+
+    def apply_typed_change(self, customer_id):
+        from datetime import datetime, timezone
+        from decimal import Decimal
+        with psycopg.connect(ADMIN) as conn:
+            conn.execute("""
+              UPDATE public.customers
+                SET status='won', balance=%s, active=TRUE, touched_at=%s
+                WHERE id=%s
+              """, (Decimal("8421.37"), datetime(2026, 10, 31, 11, 30,
+                                                  tzinfo=timezone.utc), customer_id))
+
+    def test_typed_schema_correct_effect_verifies(self):
+        customer_id, _, contract, before = self.prepare_typed_schema()
+        self.apply_typed_change(customer_id)
+        result = reconcile_postgres(READER, contract, before, KEY, now=1001)
+        self.assertEqual(result["statement"]["predicate"]["status"], "verified")
+        self.assertTrue(verify_witness(result, KEY))
+        self.assertNotIn("8421.37", repr(result))
+        self.assertNotIn(str(customer_id), repr(result))
+
+    def test_typed_schema_silent_noop_fails(self):
+        _, _, contract, before = self.prepare_typed_schema()
+        result = reconcile_postgres(READER, contract, before, KEY, now=1001)
+        self.assertEqual(result["statement"]["predicate"]["status"], "failed")
+
+    def test_typed_schema_collateral_invoice_change_fails(self):
+        customer_id, invoice_id, contract, before = self.prepare_typed_schema()
+        self.apply_typed_change(customer_id)
+        with psycopg.connect(ADMIN) as conn:
+            conn.execute("UPDATE public.invoices SET amount=0 WHERE id=%s", (invoice_id,))
+        result = reconcile_postgres(READER, contract, before, KEY, now=1001)
+        self.assertEqual(result["statement"]["predicate"]["status"], "failed")
+
+    def test_typed_schema_wrong_exact_numeric_fails(self):
+        customer_id, _, contract, before = self.prepare_typed_schema()
+        self.apply_typed_change(customer_id)
+        with psycopg.connect(ADMIN) as conn:
+            conn.execute("UPDATE public.customers SET balance=%s WHERE id=%s",
+                         ("8421.370000000000000000000000000001", customer_id))
+        result = reconcile_postgres(READER, contract, before, KEY, now=1001)
+        self.assertEqual(result["statement"]["predicate"]["status"], "failed")
+
+    def test_typed_schema_rejects_naive_timestamp_expectation(self):
+        customer_id, _, contract, before = self.prepare_typed_schema()
+        self.apply_typed_change(customer_id)
+        contract["target"]["expected"]["touched_at"] = "2026-10-31T11:30:00"
+        # A changed contract cannot reuse a signed baseline.
+        with self.assertRaises(EffectError):
+            reconcile_postgres(READER, contract, before, KEY, now=1001)
+
+    def test_unsupported_null_jsonb_fails_closed(self):
+        self.change("ALTER TABLE public.customers ADD COLUMN extra JSONB")
+        with self.assertRaises(EffectError):
+            capture_postgres(READER, CONTRACT, KEY, now=1000)
+
+
 
 if __name__ == '__main__':
     unittest.main()
