@@ -81,6 +81,10 @@ class PostgreSQLRealIntegration(unittest.TestCase):
         self.change('CREATE INDEX idx_invoice_amount ON public.invoices(amount)')
         self.change("UPDATE public.customers SET status='won' WHERE id='C-42'")
         self.assertEqual(self.verdict(), 'failed')
+    def test_constraint_change_detected(self):
+        self.change("ALTER TABLE public.invoices ADD CONSTRAINT ck_nonnegative CHECK(amount >= 0)")
+        self.change("UPDATE public.customers SET status='won' WHERE id='C-42'")
+        self.assertEqual(self.verdict(), 'failed')
     def test_rls_denies_partial_visibility(self):
         self.change('ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY')
         with self.assertRaises(EffectError):
