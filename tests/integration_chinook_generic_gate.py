@@ -154,6 +154,22 @@ class GenericChinookGateTests(unittest.TestCase):
             self.act(a)
         self.assertFalse(self.consumed(a))
 
+    def test_code_freeze_revokes_an_already_issued_action_grant(self):
+        grant = self.grant()
+        # Trusted operator freezes all pending actions. Revocation is
+        # committed before the actor attempts use of its old grant UUID.
+        with psycopg.connect(ADMIN) as c:
+            c.execute("""
+                UPDATE agentproof_generic.grants
+                   SET revoked_at = pg_catalog.clock_timestamp()
+                 WHERE consumed_at IS NULL
+            """)
+        with self.assertRaises(psycopg.Error):
+            self.act(grant)
+        self.assertEqual(self.state(), (self.original_email, self.original_price))
+        self.assertFalse(self.consumed(grant))
+        self.assertIsNone(self.committed(grant))
+
     def test_wrong_login_role_and_stale_before_value_are_denied(self):
         a = self.grant(role="other_role")
         with self.assertRaises(psycopg.Error):
