@@ -1,10 +1,15 @@
 """Fast offline regression tests for transaction-bound authenticated receipts."""
 import copy
+import json
+import os
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
 from agentproof.effect import EffectError
+from agentproof.tx_receipt_verify import main as verify_cli
 from agentproof.tx_effect import (
     CONTRACT_SCHEMA, _validate_contract, observe_transaction,
     verify_transaction_receipt,
@@ -81,6 +86,25 @@ class TransactionEvidenceUnitTests(unittest.TestCase):
         altered = copy.deepcopy(receipt)
         altered["statement"]["predicate"]["checks"][0]["status"] = "fail"
         self.assertFalse(verify_transaction_receipt(altered, KEY))
+
+    @patch("agentproof.tx_effect._read_records")
+    def test_offline_receipt_command_refuses_tampering_and_signed_failures(self, read):
+        read.return_value = db_rows()
+        valid = observe_transaction("reader", contract(), KEY)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "effect.json"
+            with patch.dict(os.environ, {"AGENTPROOF_TEST_VERIFIER_KEY": KEY}):
+                path.write_text(json.dumps(valid), encoding="utf8")
+                args = ["--receipt", str(path), "--key-env", "AGENTPROOF_TEST_VERIFIER_KEY"]
+                self.assertEqual(verify_cli(args), 0)
+                bad = copy.deepcopy(valid)
+                bad["statement"]["predicate"]["checks"][0]["status"] = "fail"
+                path.write_text(json.dumps(bad), encoding="utf8")
+                self.assertEqual(verify_cli(args), 4)
+                read.return_value = (None, None, None)
+                failed = observe_transaction("reader", contract(), KEY)
+                path.write_text(json.dumps(failed), encoding="utf8")
+                self.assertEqual(verify_cli(args), 4)
 
     def test_contract_requires_canonical_uuid_and_exact_expected_scope(self):
         baseline = contract()
