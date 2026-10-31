@@ -84,6 +84,15 @@ python -m agentproof terraform \
   --observe-root /trusted/sandbox/root --execute
 ~~~
 
+After a completed execution, the returned JSON outcome is HMAC-signed with the executor-held key. Check stored receipts using:
+
+~~~bash
+python -m agentproof check-outcome --receipt proof.json --key-env APP_APPROVAL_KEY
+# VALID (exit 0) or INVALID (exit 4)
+~~~
+
+**This authenticates the recorded outcome, not its ultimate truth.** Trust depends on the independent observer, protected executor, secret key and where the receipt is stored; an attacker with write access can still delete an unprotected receipt. Production deployments need durable, immutable evidence storage and stronger key isolation.
+
 **Warning: `--execute` invokes real Terraform apply.** Never try this against production as an experiment. If signature, expiry, plan/policy binding, or preflight validation fails, apply is not called. After a successful apply, the observer reads the actual file and returns `verified` only on a matching digest. If Terraform returns success without writing the expected bytes, the verdict is `postcondition_failed`. Mismatch is an incident requiring investigation, **not an automatic rollback**.
 
 ### Verified zero-cloud sandbox
