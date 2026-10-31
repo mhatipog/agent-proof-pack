@@ -122,6 +122,15 @@ def review_plan(plan: dict, policy: dict, *, plan_sha256: str | None = None,
             raise TerraformGateError("duplicate resource address")
         seen.add(addr)
         actions = _actions(item)
+        # A no-op can still move a resource address in Terraform state.
+        previous = item.get("previous_address")
+        check(previous in (None, addr), "no-state-address-move",
+              "state address move requires separate authorization: " + addr)
+        # Importing modifies state even when actions look benign; never infer
+        # import authorization from create/read/no-op permission.
+        check(item["change"].get("importing") is None
+              and item["change"].get("generated_config") in (None, ""),
+              "no-state-import", "Terraform resource import requires separate authorization: " + addr)
         if item.get("mode") not in ("managed", "data") or not isinstance(item.get("type"), str) or not item["type"]:
             raise TerraformGateError("invalid resource mode/type")
         if actions == ("no-op",):
