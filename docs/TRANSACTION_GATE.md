@@ -19,7 +19,7 @@ The restricted actor can invoke exactly one `SECURITY DEFINER` function with tha
 
 The function locks the protected grant row and creates a private action context bound to PostgreSQL's **backend PID and current transaction ID**. The context lives in a table inaccessible to the actor; it is *not* a spoofable `SET LOCAL` session variable. During the approved update, a row trigger allows only the exact status transition for the exact record; all other customer mutations and **all invoice mutations** are refused. Any violation raises an exception and PostgreSQL rolls the entire transaction back, including the approved update and one-time grant consumption.
 
-A protected `agentproof_guard.committed_actions` row is written in the **same transaction** as the approved mutation. The independent reader can observe this record only after the transaction commits, with the action ID, authenticated database role, PostgreSQL transaction ID and exact approved transition. If a later statement in the caller's same transaction fails, **the outcome row also rolls back**. This supplies useful causal linkage to the controlled entry point, although it is not an externally signed or append-only ledger against the database administrator.
+A protected `agentproof_guard.committed_actions` row is written in the **same transaction** as the approved mutation. An additional final-row `AFTER UPDATE` trigger writes `agentproof_guard.row_effects` and independently rechecks the status after all BEFORE row triggers have run. The protected function requires that exact row event before reporting success. An [independent transaction-bound witness](TRANSACTION_EVIDENCE.md) matches the grant, final row event and commit receipt without scanning business tables. The independent reader can observe this record only after the transaction commits, with the action ID, authenticated database role, PostgreSQL transaction ID and exact approved transition. If a later statement in the caller's same transaction fails, **the outcome row also rolls back**. This supplies useful causal linkage to the controlled entry point, although it is not an externally signed or append-only ledger against the database administrator.
 
 This is intentionally a **customer-status-only demonstration**. Blocking all invoice mutations would obviously be unsuitable for a functioning production invoice workflow. A production gate needs operator-defined, multi-table contracts, verified role ownership, transaction-scoped audit receipts, lifecycle management and external integration.
 
@@ -29,7 +29,7 @@ The [transaction-gate CI](../.github/workflows/transaction-effect-gate.yml) star
 
 - `postgres` installer/approver with control of the protected schema, authorization rows and schema migrations.
 - `effect_actor` with `EXECUTE` on the single approved function but no direct writes.
-- `effect_reader` with `SELECT` on only the watched tables for independent Proof of Effect reconciliation.
+- `effect_reader` with `SELECT` on the watched tables for independent Proof of Effect reconciliation, plus **only** the protected grant/row-effect/committed-action tables for transaction evidence.
 
 The tests verify:
 

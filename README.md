@@ -8,11 +8,23 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## One-command live transaction proof (disposable PostgreSQL)
+
+For a real, completely isolated demonstration with **two concurrent approved customer updates**, independently authenticated outcomes, and a forbidden invoice write, run from the repository root:
+
+```sh
+python -m pip install -e '.[postgresql]'
+python -m scripts.tx_quickstart
+```
+
+This starts a randomly named, disposable `postgres:16` Docker container on a randomly assigned **localhost-only** port, creates separate approver/actor/witness identities, verifies two committed actions and rejects a direct unauthorized invoice modification. The container is deleted on completion, and **no existing database or customer credentials are used**. Requires a working local Docker daemon. `--show-receipt` prints a value-redacted, demonstration-only signed outcome bundle; its ephemeral signing key is intentionally discarded.
+
+Use [`agent-tx-effect`](docs/TRANSACTION_EVIDENCE.md) with protected reader credentials to verify an actual existing sandbox action, and `agent-tx-verify` to authenticate a saved receipt later using the separately held verifier key.
 ## Transaction effect gate (experimental PostgreSQL sandbox)
 
 The existing witness detects unintended changes **after** a database operation. The new [transaction effect gate](docs/TRANSACTION_GATE.md) demonstrates preventing an unintended change **before commit**.
 
-A separate approver records a one-use authorization for an exact database role, customer row and status transition. The agent role can invoke one protected PostgreSQL function, not modify the tables directly. A trusted transaction-local context plus row triggers refuse every other customer change and any invoice change in this sandbox. If a second trigger tries to zero an invoice, PostgreSQL rolls back **the customer update, the invoice change and the approval consumption together**. A trusted record is visible only after successful commit.
+A separate approver records a one-use authorization for an exact database role, customer row and status transition. The agent role can invoke one protected PostgreSQL function, not modify the tables directly. A trusted transaction-local context plus row triggers refuse every other customer change and any invoice change in this sandbox. If a second trigger tries to zero an invoice, PostgreSQL rolls back **the customer update, the invoice change and the approval consumption together**. A trusted record is visible only after successful commit. The [transaction-bound effect witness](docs/TRANSACTION_EVIDENCE.md) now checks an **AFTER-trigger observation of the final row** against that committed action and a protected grant, using three keyed database lookups rather than full-table scans. Two concurrent, independently approved customer changes can each receive an authenticated outcome without falsely rejecting the other. An aborted transaction or late BEFORE-trigger rewrite cannot produce a valid proof. This does **not** expand the sandbox's two-table security boundary.
 
 [Real PostgreSQL 16 integration tests](tests/integration_tx_gate.py) exercise malicious nested triggers, replay, expiry, wrong role, forged session variables, concurrent attempts and independent readback. This is deliberately specific to two demo tables, **not a general production database firewall**. Database owners can bypass the protection; external side effects and unwatched tables remain out of scope.
 

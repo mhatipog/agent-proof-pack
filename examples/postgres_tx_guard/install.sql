@@ -39,6 +39,18 @@ CREATE TABLE agentproof_guard.committed_actions (
     recorded_at timestamptz NOT NULL DEFAULT pg_catalog.clock_timestamp()
 );
 
+-- Actual row effect from the guarded trigger. Created and rolled back in
+-- exactly the same PostgreSQL transaction as the protected customer update.
+-- One row per approval: a second guarded mutation aborts the transaction.
+CREATE TABLE agentproof_guard.row_effects (
+    action_id uuid PRIMARY KEY REFERENCES agentproof_guard.action_grants(action_id),
+    transaction_id bigint NOT NULL,
+    customer_id text NOT NULL,
+    from_status text NOT NULL,
+    to_status text NOT NULL,
+    observed_at timestamptz NOT NULL DEFAULT pg_catalog.clock_timestamp()
+);
+
 REVOKE ALL ON ALL TABLES IN SCHEMA agentproof_guard FROM PUBLIC;
 
 -- Any write to an invoice is outside the approved customer-status action.
@@ -85,6 +97,17 @@ BEGIN
         RAISE EXCEPTION 'effect gate: customer change outside exact grant'
             USING ERRCODE = '42501';
     END IF;
+
+    -- Validate twice: BEFORE disallows the proposed unauthorized write.
+    -- AFTER observes the FINAL stored NEW row after all BEFORE row triggers.
+    -- A later BEFORE trigger must not silently change the approved outcome.
+    -- Its effect record is atomic with the write and the commit receipt.
+    IF TG_WHEN = 'AFTER' THEN
+        INSERT INTO agentproof_guard.row_effects
+          (action_id, transaction_id, customer_id, from_status, to_status)
+        VALUES (grant_record.action_id, pg_catalog.txid_current(),
+                OLD.id, OLD.status, NEW.status);
+    END IF;
     RETURN NEW;
 END;
 $guard$;
@@ -125,6 +148,21 @@ BEGIN
             USING ERRCODE = '42501';
     END IF;
 
+    -- An accidentally disabled AFTER proof trigger must fail closed before
+    -- approval consumption or function success. The trigger enforces final
+    -- stored tuple equality, while its PK rules out a second accepted effect.
+    IF NOT EXISTS (
+        SELECT 1 FROM agentproof_guard.row_effects AS e
+        WHERE e.action_id = request_id
+          AND e.transaction_id = pg_catalog.txid_current()
+          AND e.customer_id = grant_record.customer_id
+          AND e.from_status = grant_record.from_status
+          AND e.to_status = grant_record.to_status
+    ) THEN
+        RAISE EXCEPTION 'effect gate: verified row-effect event missing'
+            USING ERRCODE = '42501';
+    END IF;
+
     DELETE FROM agentproof_guard.active_actions
      WHERE backend_pid = pg_catalog.pg_backend_pid()
        AND transaction_id = pg_catalog.txid_current()
@@ -146,6 +184,11 @@ $apply$;
 
 CREATE TRIGGER agentproof_customer_write
 BEFORE INSERT OR UPDATE OR DELETE ON public.customers
+FOR EACH ROW EXECUTE FUNCTION agentproof_guard.guard_customer();
+
+-- AFTER trigger checks the final stored tuple and emits the event once.
+CREATE TRIGGER agentproof_customer_effect
+AFTER UPDATE ON public.customers
 FOR EACH ROW EXECUTE FUNCTION agentproof_guard.guard_customer();
 
 CREATE TRIGGER agentproof_invoice_write

@@ -4,12 +4,20 @@ on:
     paths:
       - "examples/postgres_tx_guard/**"
       - "tests/integration_tx_gate.py"
+      - "agentproof/tx_effect.py"
+      - "agentproof/tx_receipt_verify.py"
+      - "scripts/tx_quickstart.py"
+      - "tests/test_tx_effect.py"
       - ".github/workflows/transaction-effect-gate.yml"
   push:
     branches: [main]
     paths:
       - "examples/postgres_tx_guard/**"
       - "tests/integration_tx_gate.py"
+      - "agentproof/tx_effect.py"
+      - "agentproof/tx_receipt_verify.py"
+      - "scripts/tx_quickstart.py"
+      - "tests/test_tx_effect.py"
       - ".github/workflows/transaction-effect-gate.yml"
   workflow_dispatch:
 
@@ -56,5 +64,9 @@ jobs:
           PY
       - name: Real PostgreSQL transaction and denial tests
         run: python -m unittest discover -s tests -p "integration_tx_gate.py" -v
-      - name: Regression of existing independent SQLite witness
-        run: python -m unittest discover -s tests -p "test_effect.py" -v
+      - name: Signed transaction receipt and existing SQLite regressions
+        run: |
+          python -m unittest discover -s tests -p "test_tx_effect.py" -v
+          python -m unittest discover -s tests -p "test_effect.py" -v
+      - name: One-command disposable PostgreSQL onboarding proof
+        run: python -m scripts.tx_quickstart
