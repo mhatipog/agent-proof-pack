@@ -47,6 +47,9 @@ Start with [the demonstration policy](../examples/terraform/policy.json) and cha
 
 Both Terraform replacement sequences, `["delete","create"]` and `["create","delete"]`, are destructive. Unknown actions, incomplete, errored or unapplyable plans, deferred changes, action invocations, pending checks, unapproved output changes and unsupported plan versions fail closed. The `complete` property is required; older Terraform releases without it will be refused.
 
+**Import and move protection:** Terraform can modify state by importing a remote object or moving a resource address even if the reported action is `no-op`. The gate explicitly refuses `change.importing`, generated import configuration and `previous_address` moves. This MVP offers no override for these state operations; review them independently.
+
+
 ## Optional approval-bound apply (real infrastructure write)
 
 1. A human or a protected approval workflow records the **exact saved binary plan SHA-256**; this approval is independent from the agent.
