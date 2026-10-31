@@ -159,7 +159,14 @@ def _snapshot(db: Path, contract: dict, key: bytes) -> dict:
                 cell_count += len(columns)
                 if cell_count > MAX_CELLS:
                     raise EffectError('snapshot exceeds bounded cell limit')
-            found[table] = {'primary_key': pk_name, 'schema_sha256': digest(info),
+            # A trigger or index can change business behavior without altering
+            # PRAGMA table_info; bind them into the schema fingerprint as well.
+            ddl_objects = conn.execute(
+                "SELECT type, name, sql FROM sqlite_master "
+                "WHERE tbl_name=? AND type IN ('index', 'trigger') "
+                "ORDER BY type, name", (table,)).fetchall()
+            found[table] = {'primary_key': pk_name,
+                            'schema_sha256': digest([info, ddl_objects]),
                             'rows': table_rows}
         conn.commit()
         return found
