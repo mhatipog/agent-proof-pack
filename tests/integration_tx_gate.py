@@ -185,11 +185,11 @@ class TransactionGateTests(unittest.TestCase):
         with psycopg.connect(ADMIN) as c:
             c.execute("""
               CREATE FUNCTION public.rewrite_approved_status() RETURNS trigger
-              LANGUAGE plpgsql AS $
+              LANGUAGE plpgsql AS $rewrite$
               BEGIN
                 NEW.status := 'lost';
                 RETURN NEW;
-              END; $;
+              END; $rewrite$;
             """)
             c.execute("""
               CREATE TRIGGER zz_rewrite_status BEFORE UPDATE ON public.customers
