@@ -24,6 +24,10 @@ The [Chinook CI](../.github/workflows/chinook-incident.yml) imports a SHA-pinned
 
 The independently maintained Chinook schema is a realistic relational example, not a customer environment. The referenced Replit 2025 incident explains *why* environment confusion matters; its unavailable production data and exact agent commands were not reproduced.
 
+## First measured overhead (not a capacity claim)
+
+[One completed GitHub Actions PostgreSQL 16 run](https://github.com/mhatipog/agent-proof-pack/actions/runs/41232317682) executed 25 native committed customer updates and 25 one-use guarded updates on separate rows of the imported Chinook data, including database connection cost. Observed medians were **7.50 ms native** and **12.674 ms guarded**, or **1.69×** the native latency in that uncontrolled CI run. This measurement excludes independent witness signing/readback and cannot be extrapolated to concurrency, real infrastructure or production. The benchmark script is reproducible at [scripts/bench_chinook_generic.py](../scripts/bench_chinook_generic.py). The outcome is useful principally because it establishes that the guard has a measurable cost rather than promising free safety.
+
 ## Decision needed before production use
 
 1. Enroll an isolated **staging** environment already used by an external agent team, with written access approvals. Do not install the sample SQL on operational databases.
