@@ -39,6 +39,18 @@ CREATE TABLE agentproof_guard.committed_actions (
     recorded_at timestamptz NOT NULL DEFAULT pg_catalog.clock_timestamp()
 );
 
+-- Actual row effect from the guarded trigger. Created and rolled back in
+-- exactly the same PostgreSQL transaction as the protected customer update.
+-- One row per approval: a second guarded mutation aborts the transaction.
+CREATE TABLE agentproof_guard.row_effects (
+    action_id uuid PRIMARY KEY REFERENCES agentproof_guard.action_grants(action_id),
+    transaction_id bigint NOT NULL,
+    customer_id text NOT NULL,
+    from_status text NOT NULL,
+    to_status text NOT NULL,
+    observed_at timestamptz NOT NULL DEFAULT pg_catalog.clock_timestamp()
+);
+
 REVOKE ALL ON ALL TABLES IN SCHEMA agentproof_guard FROM PUBLIC;
 
 -- Any write to an invoice is outside the approved customer-status action.
@@ -85,6 +97,15 @@ BEGIN
         RAISE EXCEPTION 'effect gate: customer change outside exact grant'
             USING ERRCODE = '42501';
     END IF;
+
+    -- Do not rely on the executor's "applied" return value: this trigger
+    -- writes evidence of the row transition it actually accepted. Its event
+    -- and the separately written committed_actions receipt are atomic with
+    -- the business mutation, and invisible to other sessions pre-commit.
+    INSERT INTO agentproof_guard.row_effects
+      (action_id, transaction_id, customer_id, from_status, to_status)
+    VALUES (grant_record.action_id, pg_catalog.txid_current(),
+            OLD.id, OLD.status, NEW.status);
     RETURN NEW;
 END;
 $guard$;
