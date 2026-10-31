@@ -85,6 +85,12 @@ jobs:
             --expectations "$root/examples/terraform/live-file/expectations.json" \
             --observe-root "$work" --execute > proof.json
           grep -q '"state": "verified"' proof.json
+          PYTHONPATH="$root" python -m agentproof check-outcome --receipt proof.json --key-env TEST_APPROVAL_KEY | grep -q VALID
+          python -c 'import json; p="proof.json"; d=json.load(open(p)); d["state"]="postcondition_failed"; json.dump(d,open("forged.json","w"))'
+          if PYTHONPATH="$root" python -m agentproof check-outcome --receipt forged.json --key-env TEST_APPROVAL_KEY; then
+            echo 'SAFETY FAILURE: modified receipt authenticated' >&2
+            exit 1
+          fi
           test "$(cat proof.txt)" = "agent-proof-v04-ok"
           echo 'postflight-tampered' > proof.txt
           if PYTHONPATH="$root" python -m agentproof observe-files \
