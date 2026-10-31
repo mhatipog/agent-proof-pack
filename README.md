@@ -8,6 +8,14 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## Transaction effect gate (experimental PostgreSQL sandbox)
+
+The existing witness detects unintended changes **after** a database operation. The new [transaction effect gate](docs/TRANSACTION_GATE.md) demonstrates preventing an unintended change **before commit**.
+
+A separate approver records a one-use authorization for an exact database role, customer row and status transition. The agent role can invoke one protected PostgreSQL function, not modify the tables directly. A trusted transaction-local context plus row triggers refuse every other customer change and any invoice change in this sandbox. If a second trigger tries to zero an invoice, PostgreSQL rolls back **the customer update, the invoice change and the approval consumption together**. A trusted record is visible only after successful commit.
+
+[Real PostgreSQL 16 integration tests](tests/integration_tx_gate.py) exercise malicious nested triggers, replay, expiry, wrong role, forged session variables, concurrent attempts and independent readback. This is deliberately specific to two demo tables, **not a general production database firewall**. Database owners can bypass the protection; external side effects and unwatched tables remain out of scope.
+
 ## See the problem in 30 seconds
 
 Clone the repo; no external database, cloud credentials or agent framework are needed.

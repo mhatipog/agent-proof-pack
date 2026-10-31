@@ -1,0 +1,60 @@
+name: PostgreSQL transaction effect gate (atomic rollback)
+on:
+  pull_request:
+    paths:
+      - "examples/postgres_tx_guard/**"
+      - "tests/integration_tx_gate.py"
+      - ".github/workflows/transaction-effect-gate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "examples/postgres_tx_guard/**"
+      - "tests/integration_tx_gate.py"
+      - ".github/workflows/transaction-effect-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  atomic-rollback:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: isolated-admin-password
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AGENTPROOF_GATE_TEST_ADMIN_DSN: "postgresql://postgres:isolated-admin-password@localhost:5432/postgres"
+      AGENTPROOF_GATE_TEST_ACTOR_DSN: "postgresql://effect_actor:isolated-actor-password@localhost:5432/postgres"
+      AGENTPROOF_GATE_TEST_READER_DSN: "postgresql://effect_reader:isolated-reader-password@localhost:5432/postgres"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional PostgreSQL driver
+        run: python -m pip install "psycopg[binary]>=3.2,<4"
+      - name: Provision separate writer and reader roles in disposable database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ["AGENTPROOF_GATE_TEST_ADMIN_DSN"]) as c:
+              c.execute("CREATE ROLE effect_actor LOGIN PASSWORD 'isolated-actor-password'")
+              c.execute("CREATE ROLE effect_reader LOGIN PASSWORD 'isolated-reader-password'")
+              c.execute("GRANT CONNECT ON DATABASE postgres TO effect_actor, effect_reader")
+              c.execute("GRANT USAGE ON SCHEMA public TO effect_actor, effect_reader")
+          PY
+      - name: Real PostgreSQL transaction and denial tests
+        run: python -m unittest discover -s tests -p "integration_tx_gate.py" -v
+      - name: Regression of existing independent SQLite witness
+        run: python -m unittest discover -s tests -p "test_effect.py" -v
