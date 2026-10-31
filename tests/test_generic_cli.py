@@ -30,7 +30,7 @@ class GenericInterfaceTests(unittest.TestCase):
 
     def test_rejects_noncanonical_uuid(self):
         c = copy.deepcopy(CONTRACT)
-        c["action_id"] = c["action_id"].upper()
+        c["action_id"] = "AAAAAAAA-1111-4111-8111-111111111111"
         with self.assertRaises(EffectError):
             validate_contract(c)
 
