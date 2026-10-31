@@ -6,6 +6,7 @@ on:
       - "tests/integration_chinook_generic_gate.py"
       - "tests/test_generic_cli.py"
       - "agentproof/generic_cli.py"
+      - "scripts/bench_chinook_generic.py"
       - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
       - "docs/CHINOOK_INCIDENT_LAB.md"
@@ -16,6 +17,7 @@ on:
       - "tests/integration_chinook_generic_gate.py"
       - "tests/test_generic_cli.py"
       - "agentproof/generic_cli.py"
+      - "scripts/bench_chinook_generic.py"
       - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
       - "docs/CHINOOK_INCIDENT_LAB.md"
@@ -114,3 +116,5 @@ jobs:
         run: python -m unittest discover -s tests -p "integration_chinook_generic_gate.py" -v
       - name: Existing SQLite and PostgreSQL codec regression tests
         run: python -m unittest discover -s tests -p "test_pg_codec.py" -v
+      - name: Indicative native-vs-gated update microbenchmark (disposable DB only)
+        run: python -m scripts.bench_chinook_generic
