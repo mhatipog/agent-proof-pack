@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .engine import PolicyError, evaluate, verify_signature
-from .approval import ApprovalError, issue as issue_approval
+from .approval import ApprovalError, issue as issue_approval, verify_outcome
 from .attest import ObservationError, observe_files
 from .terraform_guard import TerraformGateError, apply_saved_plan, review_plan, review_saved_plan
 
@@ -48,6 +48,9 @@ def main(argv=None):
     tf.add_argument("--environment", help="exact approved target environment")
     tf.add_argument("--expectations", help="trusted expected-result JSON")
     tf.add_argument("--observe-root", help="trusted filesystem root for postflight proof")
+    outcome = sub.add_parser("check-outcome", help="authenticate a stored Terraform outcome receipt")
+    outcome.add_argument("--receipt", required=True)
+    outcome.add_argument("--key-env", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "issue-terraform-approval":
@@ -67,6 +70,10 @@ def main(argv=None):
             os.chmod(args.output, 0o600)
             print("Signed approval written to protected output path")
             return 0
+        if args.command == "check-outcome":
+            ok = verify_outcome(read_json(args.receipt), os.environ.get(args.key_env))
+            print("VALID" if ok else "INVALID")
+            return 0 if ok else 4
         if args.command == "observe-files":
             report = observe_files(Path(args.root), read_json(args.expectations))
             print(json.dumps(report, indent=2))
