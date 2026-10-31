@@ -9,16 +9,18 @@ import hashlib
 import hmac
 import json
 import re
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 _MISSING = object()
 _KINDS = {
     "equals", "exists_in", "required", "decimal_total", "max_amount",
     "unchanged", "tool_permission", "no_destructive_sql", "state_matches",
-    "unique_action", "effects_subset",
+    "unique_action", "effects_subset", "exact_grant", "action_binding",
+    "information_flow", "https_origin",
 }
 _DESTRUCTIVE_SQL = re.compile(
     r"\b(?:DROP\s+(?:TABLE|COLUMN|DATABASE|SCHEMA|VIEW|INDEX)|"
@@ -104,6 +106,10 @@ def validate_policy(policy: dict) -> None:
             "no_destructive_sql": ("sql",), "state_matches": ("expected", "observed"),
             "unique_action": ("action_id", "processed_ids"),
             "effects_subset": ("observed", "allowed"),
+            "exact_grant": ("principal", "tool", "resource", "operation", "environment", "grants"),
+            "action_binding": ("action", "approved_digest", "approved_revision", "current_revision"),
+            "information_flow": ("source_label", "destination_label", "allowed_pairs"),
+            "https_origin": ("url", "allowed_origins"),
         }[kind]:
             _required(r, attr)
 
@@ -162,6 +168,62 @@ def _check(rule: dict, evidence: dict) -> None:
             raise CheckError("SQL must be text")
         if _DESTRUCTIVE_SQL.search(sql):
             raise CheckError("destructive SQL token detected; block for review")
+    elif kind == "exact_grant":
+        # A single matching authorization tuple prevents unsafe cross-products.
+        grants = p("grants")
+        if not isinstance(grants, list):
+            raise CheckError("authority grants must be a list")
+        keys = ("principal", "tool", "resource", "operation", "environment")
+        wanted = {key: p(key) for key in keys}
+        if any(not isinstance(v, str) or not v for v in wanted.values()):
+            raise CheckError("grant claims must be nonempty strings")
+        if not any(isinstance(g, dict) and
+                   all(g.get(k) == wanted[k] for k in keys)
+                   for g in grants):
+            raise CheckError("no exact principal/tool/resource/operation/environment grant")
+    elif kind == "action_binding":
+        # Approval covers exact structured action and target state revision.
+        action, approved = p("action"), p("approved_digest")
+        if not isinstance(action, dict) or not isinstance(approved, str):
+            raise CheckError("action or independent approval digest missing")
+        if not re.fullmatch(r"[0-9a-f]{64}", approved):
+            raise CheckError("approved digest must be a SHA-256 hex digest")
+        if digest(action) != approved:
+            raise CheckError("actual action differs from approved action")
+        if p("current_revision") != p("approved_revision"):
+            raise CheckError("target state revision changed since approval")
+    elif kind == "information_flow":
+        source, dest, pairs = p("source_label"), p("destination_label"), p("allowed_pairs")
+        if not isinstance(source, str) or not source or not isinstance(dest, str) or not dest:
+            raise CheckError("source or destination classification missing")
+        if not isinstance(pairs, list) or not any(
+            isinstance(pair, dict) and pair.get("source") == source and
+            pair.get("destination") == dest for pair in pairs
+        ):
+            raise CheckError("source-to-destination information flow not permitted")
+    elif kind == "https_origin":
+        url, allowed = p("url"), p("allowed_origins")
+        if not isinstance(url, str) or not isinstance(allowed, list):
+            raise CheckError("URL or origin allowlist missing")
+        if any(ord(c) < 33 or c == chr(92) for c in url):
+            raise CheckError("unsafe URL characters")
+        try:
+            parsed = urlsplit(url)
+            port = parsed.port
+        except ValueError as exc:
+            raise CheckError("malformed HTTPS destination") from exc
+        if (parsed.scheme != "https" or not parsed.hostname or
+            parsed.username is not None or parsed.password is not None or parsed.fragment):
+            raise CheckError("destination must be a canonical HTTPS URL")
+        host = parsed.hostname
+        if not host.isascii() or not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+            raise CheckError("noncanonical hostname")
+        netloc = host.lower() + (f":{port}" if port is not None else "")
+        if parsed.netloc.lower() != netloc:
+            raise CheckError("noncanonical URL authority")
+        origin = "https://" + host.lower() + (f":{port}" if port and port != 443 else "")
+        if origin not in allowed:
+            raise CheckError("HTTPS destination origin not in allowlist")
     elif kind == "unique_action":
         ids = p("processed_ids")
         if not isinstance(ids, list):

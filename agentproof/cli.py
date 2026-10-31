@@ -46,6 +46,10 @@ def main(argv=None):
             print("VALID" if passed else "INVALID")
             return 0 if passed else 4
         cases = read_json(args.cases)
+        if isinstance(cases, dict) and isinstance(cases.get("cases"), list):
+            cases = cases["cases"]
+        if not isinstance(cases, list) or not cases:
+            raise PolicyError("scenario library must contain a nonempty case list")
         failed = []
         for case in cases:
             try:

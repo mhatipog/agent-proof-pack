@@ -20,3 +20,5 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Public failure scenarios
         run: python -m agentproof suite
+      - name: Incident-derived regression scenarios
+        run: python -m agentproof suite --cases examples/incident_cases.json
