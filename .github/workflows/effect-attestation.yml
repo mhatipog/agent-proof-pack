@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test independent SQLite observer
-        run: python -m unittest tests.test_effect -v
+        run: python -m unittest discover -s tests -p 'test_effect.py' -v
       - name: Generate and verify real SQLite observation
         shell: bash
         run: |
