@@ -62,6 +62,18 @@ jobs:
           grep -q 'Chinook Database - Version 1.4.5' "$RUNNER_TEMP/chinook.sql"
           grep -q '^CREATE TABLE customer' "$RUNNER_TEMP/chinook.sql"
           grep -q '^CREATE TABLE invoice_line' "$RUNNER_TEMP/chinook.sql"
+          # Upstream generated SQL uses a SQL-style semicolon after a psql
+          # backslash command. Normalize only that client-side command;
+          # the CREATE TABLE and INSERT data remain byte-for-byte upstream.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          source = Path(os.environ["RUNNER_TEMP"]) / "chinook.sql"
+          script = source.read_text(encoding="utf8")
+          marker = chr(92) + "c chinook;"
+          assert script.count(marker) == 1, "unexpected upstream database switch"
+          source.write_text(script.replace(marker, chr(92) + "c chinook"), encoding="utf8")
+          PY
           psql "$PG_BOOTSTRAP_URL" -X -v ON_ERROR_STOP=1 -q -f "$RUNNER_TEMP/chinook.sql" > /dev/null
           python - <<'PY'
           import os, psycopg
