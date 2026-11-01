@@ -2,8 +2,12 @@
 import time
 import unittest
 from unittest.mock import patch
-import jwt
-from cryptography.hazmat.primitives.asymmetric import rsa
+try:
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+except ImportError:
+    jwt = None
+    rsa = None
 from agentproof.entra import EntraPolicy, AuthorizationDenied, verify_access_token
 from agentproof.entra_guard import authorized_apply
 
@@ -20,6 +24,7 @@ class KeyClient:
         return type("SigningKey", (), {"key": self.key})()
 
 
+@unittest.skipUnless(jwt is not None and rsa is not None, "install optional entra dependencies")
 class AuthorizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
