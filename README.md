@@ -8,6 +8,12 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## Entra-authenticated guarded execution
+
+The optional [Entra action executor](docs/ENTRA_ACTION_EXECUTOR.md) binds a preapproved PostgreSQL change to a signed Microsoft Entra app-only API access token. The executor checks the exact tenant, application and service principal, token audience, and dedicated `AgentProof.Apply` role before invoking the one-use transaction gate. An independent database reader must still verify the outcome. Tokens issued for Fabric, Microsoft Graph or another API cannot authorize this guard.
+
+Run the [signed-token authorization test suite](.github/workflows/entra-authorization.yml) to exercise forged signatures, wrong identities, missing roles and expiry. Cloud access requires a separately configured, dedicated guard API registration and protected execution service; the command wrapper alone is not a security boundary against an agent with arbitrary shell access.
+
 ## Architecture
 
 ![Agent Proof Pack architecture: trusted approval, restricted agent execution, independent verification, and two evidence modes](docs/architecture.svg)
