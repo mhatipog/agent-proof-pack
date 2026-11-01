@@ -160,6 +160,73 @@ class GenericChinookGateTests(unittest.TestCase):
         self.assertEqual(self.state(), (TARGET, self.original_price))
         self.assertTrue(self.consumed(action))
 
+    def test_entra_authorized_action_real_postgres_and_independent_witness(self):
+        """Signed identity + one-use grant + actual Chinook row effect.
+
+        RSA tokens here are synthetic and issued by the test harness, not Entra.
+        The independent live Entra token/resource-boundary experiment is separate.
+        """
+        import jwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from agentproof.entra import verify_access_token, AuthorizationDenied
+        from agentproof.entra_guard import authorized_apply
+        from datetime import datetime, timezone, timedelta
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        class FixedKeys:
+            def get_signing_key_from_jwt(self, token):
+                return type("SigningKey", (), {"key": key.public_key()})()
+
+        tenant = "520ff1ea-148f-4a16-9a92-6d51ac1d08c5"
+        client = "254a9ad1-a8af-475d-9228-7b0372c8eea7"
+        principal = "a1234567-1234-4234-8234-a12345678901"
+        api = "api://11111111-2222-4333-8444-555555555555"
+        now = int(datetime.now(timezone.utc).timestamp())
+        claims = {"ver": "2.0", "iss": f"https://login.microsoftonline.com/{tenant}/v2.0",
+                  "tid": tenant, "aud": api, "oid": principal, "azp": client,
+                  "roles": ["AgentProof.Apply"], "idtyp": "app",
+                  "iat": now, "nbf": now - 10, "exp": now + 180}
+        def sign(**overrides):
+            return jwt.encode({**claims, **overrides}, key, algorithm="RS256",
+                              headers={"kid": "testkey"})
+        def verifier(token, policy):
+            return verify_access_token(token, policy, jwk_client=FixedKeys())
+
+        action = self.grant()
+        env = {"AGENTPROOF_ENTRA_TENANT_ID": tenant,
+               "AGENTPROOF_ENTRA_AUDIENCE": api,
+               "AGENTPROOF_ENTRA_CLIENT_ID": client,
+               "AGENTPROOF_ENTRA_PRINCIPAL_OID": principal,
+               "AGENTPROOF_ENTRA_REQUIRED_ROLE": "AgentProof.Apply",
+               "AGENTPROOF_ACTOR_DSN": WRITER,
+               "AGENTPROOF_ENTRA_ACCESS_TOKEN": sign(roles=["AgentProof.Read"])}
+        with self.assertRaises(AuthorizationDenied):
+            authorized_apply(str(action), environ=env, verifier=verifier)
+        self.assertFalse(self.consumed(action))
+        self.assertEqual(self.state(), (self.original_email, self.original_price))
+        self.assertIsNone(self.committed(action))
+        env["AGENTPROOF_ENTRA_ACCESS_TOKEN"] = sign(
+            oid="99999999-9999-4999-8999-999999999999")
+        with self.assertRaises(AuthorizationDenied):
+            authorized_apply(str(action), environ=env, verifier=verifier)
+        self.assertFalse(self.consumed(action))
+
+        env["AGENTPROOF_ENTRA_ACCESS_TOKEN"] = sign()
+        execution = authorized_apply(str(action), environ=env, verifier=verifier)
+        self.assertEqual(execution["state"], "submitted_unverified")
+        self.assertFalse(execution["database_effect_verified"])
+        self.assertEqual(self.state(), (TARGET, self.original_price))
+        self.assertTrue(self.consumed(action))
+        verified = observe_approved(READER, self.generic_contract(action), KEY)
+        self.assertEqual(verified["statement"]["predicate"]["status"], "verified")
+        self.assertTrue(verify_outcome(verified, KEY,
+                                      contract=self.generic_contract(action)))
+
+        # Same valid identity cannot replay consumed database permission.
+        with self.assertRaises(EffectError):
+            authorized_apply(str(action), environ=env, verifier=verifier)
+        self.assertEqual(self.state(), (TARGET, self.original_price))
+
     def test_witness_cannot_call_missing_grant_verified(self):
         action = self.grant()
         evidence = observe_approved(READER, self.generic_contract(action), KEY)
