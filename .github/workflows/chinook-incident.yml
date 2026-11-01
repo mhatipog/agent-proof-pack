@@ -6,6 +6,8 @@ on:
       - "tests/integration_chinook_generic_gate.py"
       - "tests/test_generic_cli.py"
       - "agentproof/generic_cli.py"
+      - "agentproof/entra.py"
+      - "agentproof/entra_guard.py"
       - "scripts/bench_chinook_generic.py"
       - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
@@ -17,6 +19,8 @@ on:
       - "tests/integration_chinook_generic_gate.py"
       - "tests/test_generic_cli.py"
       - "agentproof/generic_cli.py"
+      - "agentproof/entra.py"
+      - "agentproof/entra_guard.py"
       - "scripts/bench_chinook_generic.py"
       - "examples/postgres_generic_gate/**"
       - ".github/workflows/chinook-incident.yml"
@@ -56,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install "psycopg[binary]>=3.2,<4"
+          python -m pip install "psycopg[binary]>=3.2,<4" "PyJWT[crypto]>=2.8,<3"
           if ! command -v psql >/dev/null 2>&1; then
             sudo apt-get update -qq
             sudo apt-get install -y -qq postgresql-client
