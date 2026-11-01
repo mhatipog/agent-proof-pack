@@ -38,6 +38,12 @@ A successful wrapper result is `submitted_unverified`, **never** proof of a corr
 
 Run `python -m unittest tests/test_entra_authorization.py -v` with optional `entra` dependencies installed. The test suite signs actual RSA JWTs and covers wrong resource, tenant, issuer, client, object ID, application role, delegated scopes, altered signature, expiration and not-before. It asserts that the DB function is never invoked when authentication fails. CI runs this separately from the dependency-light base tests.
 
+### Observed live Entra and Fabric authorization
+
+The [November 1, 2026 resource-audience assay](../evidence/entra-resource-boundary-2026-11-01.json) exercised an actual GitHub OIDC federation exchange into an owner-controlled Entra tenant and disposable Fabric workspace. The correct Fabric token accessed that workspace (HTTP 200), while an Entra token issued for Microsoft Graph was refused by the Fabric API (HTTP 401). The guard verifier also refused to accept the Fabric token as a grant for the guard API. The public RSA signature/claims suite passed independently.
+
+This establishes the **resource audience separation** tested, not a live `AgentProof.Apply` role assignment or Entra-guarded PostgreSQL transaction. A full end-to-end app-role transaction test requires a dedicated resource API registration, a caller grant, and an isolated executor. The public evidence records the private run identifier and artifact digest; no JWTs or tenant credentials are published.
+
 ### Deployment limits
 
 This is a *reference executor*, not a network API implementation, token-introspection service, immutable approval store or complete revocation guarantee. Key rotation is fetched through Microsoft's current keys; already issued tokens remain usable until expiry unless explicitly blocked by the surrounding system. JWT app roles are not a substitute for database constraints, action-level approval, server-side nonce/replay controls, admission limits or independent observation.
