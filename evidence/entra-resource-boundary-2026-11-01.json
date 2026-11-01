@@ -1,0 +1,31 @@
+{
+  "schema": "agent-proof-pack/entra-fabric-resource-boundary/v1",
+  "date": "2026-11-01",
+  "test": "Real Microsoft Entra workload federation and Fabric resource audience separation",
+  "environment": "Owner-controlled disposable Microsoft Fabric workspace; private GitHub OIDC runner",
+  "result": "verified-resource-boundary",
+  "observations": {
+    "github_oidc_to_entra_token_exchange": "passed",
+    "authorized_fabric_workspace_get_http": 200,
+    "cross_resource_graph_token_to_fabric_http": 401,
+    "wrong_resource_denied": true,
+    "agent_proof_pack_rejects_fabric_resource_token": true,
+    "signed_rsa_identity_regressions": "7 test methods passed",
+    "agentproof_api_role_positive_test": false,
+    "separate_agent_principals_tested": false,
+    "postgresql_mutation_performed": false
+  },
+  "provenance": {
+    "private_workflow_run": "https://github.com/mhatipog/web-operations/actions/runs/41284410379",
+    "artifact_name": "agentproof-entra-live-41284410379",
+    "artifact_sha256": "d2561afca8de266d8531a890975d60367886e9daf20f30ad3adac341d610a68f",
+    "artifact_expiry_utc": "2026-11-06T07:22:11Z",
+    "public_signed_token_ci": "https://github.com/mhatipog/agent-proof-pack/actions/runs/41284310390",
+    "tested_code_commit": "f64a5c619226cc592a11a23897a2bcb0d89591fe"
+  },
+  "evidence_limits": [
+    "The live integration validates workload federation and Fabric resource authorization; it does not grant an Agent Proof Pack API role.",
+    "The workflow lives in an owner-controlled private repository; third-party reviewers can independently reproduce the public signed-token regressions.",
+    "No external tenant, customer data, or production database was accessed."
+  ]
+}
