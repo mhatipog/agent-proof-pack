@@ -177,10 +177,10 @@ class GenericChinookGateTests(unittest.TestCase):
             def get_signing_key_from_jwt(self, token):
                 return type("SigningKey", (), {"key": key.public_key()})()
 
-        tenant = "520ff1ea-148f-4a16-9a92-6d51ac1d08c5"
-        client = "254a9ad1-a8af-475d-9228-7b0372c8eea7"
-        principal = "a1234567-1234-4234-8234-a12345678901"
-        api = "api://11111111-2222-4333-8444-555555555555"
+        tenant = "11111111-2222-4333-8444-555555555555"
+        client = "22222222-3333-4444-8555-666666666666"
+        principal = "33333333-4444-4555-8666-777777777777"
+        api = "api://44444444-5555-4666-8777-888888888888"
         now = int(datetime.now(timezone.utc).timestamp())
         claims = {"ver": "2.0", "iss": f"https://login.microsoftonline.com/{tenant}/v2.0",
                   "tid": tenant, "aud": api, "oid": principal, "azp": client,
