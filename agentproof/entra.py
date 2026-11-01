@@ -40,8 +40,9 @@ class EntraPolicy:
         _guid(self.application_id)
         _guid(self.principal_object_id)
         if (not isinstance(self.audience, str) or not self.audience
-                or not (self.audience.startswith("api://")
-                        or self.audience == self.application_id)):
+                or not self.audience.startswith("api://")
+                or len(self.audience) <= 6
+                or self.audience == "api://" + self.application_id):
             # A first-party Microsoft API token must not authorize this guard.
             raise AuthorizationDenied("expected audience must be the guard's own API")
         if (not isinstance(self.required_role, str)
