@@ -139,15 +139,18 @@ class ActionIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(executed, ["A"])
         self.assertIn("call_1", input_checks)
         self.assertIn("call_1", output_checks)
-        self.assertIn(
-            "call_1",
-            [r.output.output_info for r in result.tool_input_guardrail_results],
-            "Input guardrail ran but its evidence was lost",
-        )
-        self.assertIn(
-            "call_1",
-            [r.output.output_info for r in result.tool_output_guardrail_results],
-            "Output guardrail ran but its evidence was lost",
+        input_evidence = [
+            r.output.output_info for r in result.tool_input_guardrail_results
+        ]
+        output_evidence = [
+            r.output.output_info for r in result.tool_output_guardrail_results
+        ]
+        observed = ("call_1" in input_evidence, "call_1" in output_evidence)
+        self.assertEqual(
+            observed,
+            (True, True),
+            "Guardrail audit evidence missing after resume: "
+            f"input_present={observed[0]} output_present={observed[1]}",
         )
 
 
