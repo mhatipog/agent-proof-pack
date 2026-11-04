@@ -1,0 +1,29 @@
+name: OpenAI Agents SDK integrity lab
+
+on:
+  push:
+    paths:
+      - 'labs/openai_agents_sdk_integrity/**'
+      - '.github/workflows/agents-sdk-integrity.yml'
+  pull_request:
+    paths:
+      - 'labs/openai_agents_sdk_integrity/**'
+      - '.github/workflows/agents-sdk-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-sdk-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned optional SDK
+        run: python -m pip install --disable-pip-version-check 'openai-agents==0.24.0'
+      - name: Run isolated approval and audit regressions
+        run: python labs/openai_agents_sdk_integrity/run_lab.py
