@@ -22,7 +22,7 @@ CASES = (
     ),
     (
         "test_approved_tool_guardrail_results_survive_resume",
-        "Input guardrail ran but its evidence was lost",
+        "Guardrail audit evidence missing after resume:",
     ),
 )
 
