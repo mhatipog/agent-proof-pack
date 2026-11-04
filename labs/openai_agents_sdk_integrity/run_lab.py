@@ -44,7 +44,18 @@ def main() -> int:
                 and len(result.failures) == 1
                 and expected_message in result.failures[0][1]
             ):
-                print(f"REPRODUCED {name} (expected regression failure)", flush=True)
+                evidence = next(
+                    (
+                        line.strip()
+                        for line in result.failures[0][1].splitlines()
+                        if expected_message in line
+                    ),
+                    expected_message,
+                )
+                print(
+                    f"REPRODUCED {name} (expected regression failure): {evidence}",
+                    flush=True,
+                )
             else:
                 print(f"UNEXPECTED_FAILURE {name}: {stream.getvalue()}", flush=True)
                 unexpected = True
