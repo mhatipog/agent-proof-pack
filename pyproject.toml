@@ -42,6 +42,7 @@ agent-effect = "agentproof.effect_cli:main"
 agent-guarded = "agentproof.generic_cli:main"
 agent-guarded-entra = "agentproof.entra_guard:main"
 agent-proof-mcp-gateway = "agentproof.mcp_gateway:main"
+agent-proof-witness = "agentproof.witness_http:main"
 agent-tx-effect = "agentproof.tx_effect:main"
 agent-tx-verify = "agentproof.tx_receipt_verify:main"
 
