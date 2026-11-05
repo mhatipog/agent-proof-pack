@@ -1,0 +1,30 @@
+name: EVM checkpoint contract compilation
+
+on:
+  push:
+    paths:
+      - 'contracts/AgentProofAnchor.sol'
+      - '.github/workflows/chain-anchor-contract.yml'
+  pull_request:
+    paths:
+      - 'contracts/AgentProofAnchor.sol'
+      - '.github/workflows/chain-anchor-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-solidity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile isolated contract with pinned solc-js
+        run: |
+          npx --yes solc@0.8.30 --version
+          npx --yes solc@0.8.30 --bin --abi contracts/AgentProofAnchor.sol -o /tmp/agent-proof-solidity
+          test -s /tmp/agent-proof-solidity/contracts_AgentProofAnchor_sol_AgentProofAnchor.bin
