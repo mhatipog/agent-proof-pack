@@ -60,7 +60,7 @@ https://py.sdk.modelcontextprotocol.io/run/authorization/
   sequences. Signature alone does not establish the absence of historical gaps.
 - contracts/AgentProofAnchor.sol: minimal EVM contract with per-publisher
   stream namespaces, monotone epochs, previous-on-chain-anchor matching and
-  event emission. **Not deployed or compiler-tested yet.**
+  event emission. **Compiled and exercised on an isolated synthetic EVM in GitHub Actions; not deployed on a public network.**
 
 Offline checks:
 
@@ -108,7 +108,8 @@ the claimed external side effect actually occurred.
 | Gateway shell/network bypass impossible | Unverified; requires isolated deployment |
 | Missing action before witness ingestion detected | Unsolved; needs durable independent ingress ACK |
 | External API side effect after timeout reconciled | Unsolved; needs destination-side idempotency |
-| Ethereum/Base contract compiled, deployed and queried | Not yet performed |
+| Contract compiled; replay, predecessor and namespace behavior on isolated EVM | CI passed |
+| Public Base/Ethereum deployment and independent RPC receipt verification | Not yet performed |
 | Signer rotation, L2 finality, availability and failover | Not implemented |
 
 Next, implement **one** protected agent tool end to end using the repository's
