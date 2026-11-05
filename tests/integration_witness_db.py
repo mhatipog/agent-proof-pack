@@ -287,7 +287,10 @@ class RealWitnessGateTests(unittest.TestCase):
         self.assertFalse(result["independent_effect_verified"])
         with self.assertRaises(GatewayDenied):
             gate.apply(token(), action)
-        self.assertEqual(witness_called, [action])
+        # A replay reaches the witness, but its unique durable reservation
+        # rejects it; no second signed receipt or database commit is made.
+        self.assertEqual(witness_called, [action, action])
+        self.assertEqual(len(self.ledger.read_all()), 1)
 
 
 if __name__ == "__main__":
