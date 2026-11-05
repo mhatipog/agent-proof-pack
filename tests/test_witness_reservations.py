@@ -6,8 +6,9 @@ try:
     from agentproof.witness_http import WitnessClient, make_handler
     from agentproof.witness_reservations import (
         AlreadyReserved, DurableWitnessLedger, WitnessDenied, receipt_hash,
-        verify_reservation, witness_public_key,
+        verify_reservation, witness_public_key, verify_witness_export,
     )
+    from agentproof.witness_verify import verify_file
     HAS_WITNESS_CRYPTO = True
 except ImportError:
     HAS_WITNESS_CRYPTO = False
@@ -157,6 +158,30 @@ class WitnessLedgerTests(unittest.TestCase):
                 gate.apply("synthetic", ACTION)
         self.assertEqual(calls, [ACTION])
         self.assertEqual(len(self.ledger.read_all()), 1)
+
+
+    def test_public_key_export_verifier_detects_tampering_and_pinned_head(self):
+        from json import dumps
+        self.ledger.reserve(ACTION, PRINCIPAL, NONCE)
+        self.ledger.reserve(str(uuid4()), PRINCIPAL, "c" * 32)
+        records = self.ledger.read_all()
+        self.assertTrue(verify_witness_export(records, self.pub))
+        out = Path(self.tmp.name) / "export.json"
+        out.write_text(dumps(records), encoding="utf8")
+        self.assertEqual(verify_file(str(out), self.pub,
+                                     receipt_hash(records[-1]))["records"], 2)
+        out.write_text(dumps(records[:1]), encoding="utf8")
+        # An internal prefix is authentic but incomplete relative to a pinned head.
+        with self.assertRaises(WitnessDenied):
+            verify_file(str(out), self.pub, receipt_hash(records[-1]))
+        altered = deepcopy(records)
+        altered[1]["record"]["nonce"] = "f" * 32
+        with self.assertRaises(WitnessDenied):
+            verify_witness_export(altered, self.pub)
+        with self.assertRaises(WitnessDenied):
+            verify_witness_export(list(reversed(records)), self.pub)
+        with self.assertRaises(WitnessDenied):
+            verify_witness_export(records, witness_public_key(Ed25519PrivateKey.generate()))
 
 
 if __name__ == "__main__":
