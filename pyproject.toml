@@ -27,6 +27,7 @@ classifiers = [
 [project.optional-dependencies]
 postgresql = ["psycopg[binary]>=3.2,<4"]
 entra = ["PyJWT[crypto]>=2.8,<3"]
+gateway = ["mcp>=2,<3", "PyJWT[crypto]>=2.8,<3", "psycopg[binary]>=3.2,<4"]
 
 [project.urls]
 Homepage = "https://github.com/mhatipog/agent-proof-pack"
@@ -40,6 +41,9 @@ agent-proof = "agentproof.cli:main"
 agent-effect = "agentproof.effect_cli:main"
 agent-guarded = "agentproof.generic_cli:main"
 agent-guarded-entra = "agentproof.entra_guard:main"
+agent-proof-mcp-gateway = "agentproof.mcp_gateway:main"
+agent-proof-witness = "agentproof.witness_http:main"
+agent-proof-witness-verify = "agentproof.witness_verify:main"
 agent-tx-effect = "agentproof.tx_effect:main"
 agent-tx-verify = "agentproof.tx_receipt_verify:main"
 

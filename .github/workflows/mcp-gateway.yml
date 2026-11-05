@@ -1,0 +1,50 @@
+name: Remote MCP gateway boundary
+
+on:
+  push:
+    paths:
+      - 'agentproof/mcp_gateway.py'
+      - 'agentproof/witness_http.py'
+      - 'agentproof/witness_reservations.py'
+      - 'agentproof/witness_verify.py'
+      - 'tests/test_witness_reservations.py'
+      - 'tests/test_mcp_gateway*.py'
+      - 'docs/MCP_GATEWAY.md'
+      - 'pyproject.toml'
+      - '.github/workflows/mcp-gateway.yml'
+  pull_request:
+    paths:
+      - 'agentproof/mcp_gateway.py'
+      - 'agentproof/witness_http.py'
+      - 'agentproof/witness_reservations.py'
+      - 'agentproof/witness_verify.py'
+      - 'tests/test_witness_reservations.py'
+      - 'tests/test_mcp_gateway*.py'
+      - 'docs/MCP_GATEWAY.md'
+      - 'pyproject.toml'
+      - '.github/workflows/mcp-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-gateway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway-regressions:
+    # Public repository. Only synthetic tests; no credentials or self-hosted runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install optional HTTP MCP gateway
+        run: python -m pip install --disable-pip-version-check -e '.[gateway]' 'httpx>=0.27,<1'
+      - name: Check the HTTP identity and guarded action boundary
+        run: python -m unittest discover -s tests -p 'test_mcp_gateway*.py' -v
+      - name: Verify independent witness durability and signed admissions
+        run: python -m unittest discover -s tests -p 'test_witness_reservations.py' -v
