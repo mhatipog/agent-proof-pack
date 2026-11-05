@@ -15,7 +15,7 @@ except ImportError:
     _HAS_SDK = False
 
 from agentproof.entra import AuthorizationDenied
-from test_mcp_gateway import POLICY, config, SyntheticWitness
+from test_mcp_gateway import POLICY, config as make_config, SyntheticWitness
 
 
 @unittest.skipUnless(_HAS_SDK, "optional mcp/httpx gateway dependencies not installed")
@@ -27,7 +27,7 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
         def apply(dsn, action_id):
             operations.append(action_id)
             raise AssertionError("transport admitted unauthenticated tool")
-        config = config(actor_dsn="postgresql://synthetic-only")
+        config = make_config(actor_dsn="postgresql://synthetic-only")
         gateway = GuardedActionGateway(config, verifier=verify, executor=apply,
                                        witness=SyntheticWitness())
         server = build_mcp_server(config, gateway=gateway)
@@ -63,7 +63,7 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
             actions.append((dsn, action))
             return {"action_id": action, "state": "submitted_unverified"}
 
-        config = config(actor_dsn="postgresql://mock-execute-only")
+        config = make_config(actor_dsn="postgresql://mock-execute-only")
         server = build_mcp_server(config, gateway=GuardedActionGateway(
             config, verifier=verify, executor=execute,
             witness=SyntheticWitness()))
@@ -133,7 +133,7 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
             executions.append(action)
             return {"action_id": action, "state": "submitted_unverified"}
 
-        config = config(actor_dsn="postgresql://synthetic-only")
+        config = make_config(actor_dsn="postgresql://synthetic-only")
         server = build_mcp_server(config, gateway=GuardedActionGateway(
             config, verifier=verify, executor=execute,
             witness=SyntheticWitness()))
