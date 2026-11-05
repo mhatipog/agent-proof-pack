@@ -1,8 +1,16 @@
 """Synthetic adversarial checks for the protected gateway boundary."""
 import unittest
 from agentproof.entra import AuthorizationDenied, EntraPolicy
-from agentproof.mcp_gateway import GatewayConfig, GatewayDenied, GuardedActionGateway
-from agentproof.witness_reservations import WitnessDenied
+try:
+    from agentproof.mcp_gateway import GatewayConfig, GatewayDenied, GuardedActionGateway
+    from agentproof.witness_reservations import WitnessDenied
+    HAS_GATEWAY_CRYPTO = True
+except ImportError:
+    HAS_GATEWAY_CRYPTO = False
+
+    class WitnessDenied(Exception):
+        pass
+
 
 TENANT = "11111111-1111-4111-8111-111111111111"
 APP = "22222222-2222-4222-8222-222222222222"
@@ -33,6 +41,7 @@ class SyntheticWitness:
         return "a" * 64
 
 
+@unittest.skipUnless(HAS_GATEWAY_CRYPTO, "install optional gateway cryptography dependencies")
 class MCPGatewayTests(unittest.TestCase):
     def setUp(self):
         self.executed = []
