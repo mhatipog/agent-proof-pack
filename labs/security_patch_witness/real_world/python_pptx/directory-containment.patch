@@ -1,0 +1,49 @@
+--- a/src/pptx/opc/serialized.py
++++ b/src/pptx/opc/serialized.py
+@@ -151,17 +151,40 @@
+     """
+ 
+     def __init__(self, path: str):
+-        self._path = os.path.abspath(path)
++        self._path = os.path.realpath(path)
++
++    def _member_path(self, pack_uri: PackURI) -> str:
++        """Resolve a package member without escaping the expanded-package root.
++
++        In particular this rejects parent segments and symlinks that resolve outside
++        the package. The directory must not be concurrently mutable by an attacker.
++        """
++        if not isinstance(pack_uri, PackURI):
++            raise KeyError("not a package part")
++        membername = pack_uri.membername
++        parts = membername.split("/")
++        if not membername or any(part in ("", ".", "..") for part in parts):
++            raise KeyError("invalid package member '%s'" % pack_uri)
++
++        path = os.path.realpath(os.path.join(self._path, *parts))
++        try:
++            contained = os.path.commonpath((self._path, path)) == self._path
++        except ValueError:  # e.g. unrelated drive letters on Windows
++            contained = False
++        if not contained:
++            raise KeyError("member outside package '%s'" % pack_uri)
++        return path
+ 
+     def __contains__(self, pack_uri: object) -> bool:
+-        """Return True when part identified by `pack_uri` is present in zip archive."""
+-        if not isinstance(pack_uri, PackURI):
++        """Return True when a member exists within the expanded package root."""
++        try:
++            return os.path.exists(self._member_path(pack_uri))
++        except KeyError:
+             return False
+-        return os.path.exists(posixpath.join(self._path, pack_uri.membername))
+ 
+     def __getitem__(self, pack_uri: PackURI) -> bytes:
+-        """Return bytes of file corresponding to `pack_uri` in package directory."""
+-        path = os.path.join(self._path, pack_uri.membername)
++        """Return a package member, rejecting paths outside the expanded root."""
++        path = self._member_path(pack_uri)
+         try:
+             with open(path, "rb") as f:
+                 return f.read()
