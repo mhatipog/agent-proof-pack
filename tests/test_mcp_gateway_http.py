@@ -9,13 +9,12 @@ import unittest
 try:
     import httpx
     import mcp
-    from agentproof.mcp_gateway import build_mcp_server
+    from agentproof.mcp_gateway import build_mcp_server, GatewayConfig, GuardedActionGateway
     _HAS_SDK = True
 except ImportError:
     _HAS_SDK = False
 
 from agentproof.entra import AuthorizationDenied
-from agentproof.mcp_gateway import GatewayConfig, GuardedActionGateway
 from test_mcp_gateway import POLICY, config, SyntheticWitness
 
 
