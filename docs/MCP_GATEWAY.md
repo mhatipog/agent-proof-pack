@@ -1,115 +1,118 @@
-# Authenticated remote MCP execution gateway (research pilot)
+# Authenticated MCP execution with an independent witness
 
-**Status: opt-in isolated-service prototype, not production certified.**
+**Status: research prototype. Synthetic CI passed; no live Codex containment test or production deployment.**
 
-The remote Streamable HTTP MCP tool accepts only an operator-approved UUID.
-It verifies an Entra app-only access token for a *dedicated* Agent Proof API,
-then calls the existing restricted PostgreSQL one-use transaction function.
-It does not accept SQL, policy, grant specifications, credentials or arbitrary
-destinations from an AI agent.
+The remote MCP service accepts just one operator-issued UUID and a Microsoft Entra app-only access token for a dedicated Agent Proof resource API. No agent-supplied SQL, grant, policy or destination is accepted. Before the transaction gate runs, the gateway must receive and authenticate an independently signed, durably committed witness reservation.
 
-## Trust boundary
+## Three trust zones
 
-    Codex / another MCP client -- HTTPS with bearer token -->
-    HTTPS reverse proxy -- localhost-only MCP resource server -->
-    fixed Entra tenant + aud + app + principal + AgentProof.Apply -->
-    fixed EXECUTE-only PostgreSQL identity -->
-    agentproof_generic.apply_text_change(preapproved_uuid)
+    [Untrusted Codex or other MCP agent]
+       | HTTPS, dedicated Entra API access token
+       v
+    [Separately managed MCP gateway]
+       | fixed tenant, audience, app, principal, AgentProof.Apply role
+       | exact canonical UUID, no agent-supplied SQL
+       |
+       +---- HTTPS bearer ---> [Independent pre-execution witness]
+       |                       private Ed25519 key, durable SQLite ledger
+       |                       atomic one-use reservation per UUID
+       |                       monotone sequence and signed previous hash
+       |                       fresh request nonce bound to caller and action
+       |
+       | verified signature / fresh challenge / pinned public key
+       v
+    [PostgreSQL one-use transaction gate]
+       | fixed EXECUTE-only actor credential; separate operator issues grants
+       v
+    [Independent read-only DB outcome verifier]
 
-    Operator: creates revocable and expiring grants independently
-    Witness:  separately reads database outcome with SELECT-only credentials
+The gateway must not share its credential store or administrative namespace with the agent. The witness must not share its key, storage or host identity with the gateway. The agent must have no other path to PostgreSQL or to grant creation. Merely installing this MCP server in an unrestricted local Codex shell is not containment.
 
-The agent must NOT have the executor DSN, database-owner access, grant-writer
-permissions, gateway environment, signing keys, or any direct network path to
-PostgreSQL. Merely adding an MCP server to an unconfined Codex shell is not
-containment: the agent might simply bypass the gateway.
+## Provisioning the witness
 
-## Controlled deployment
+Use a dedicated host/VM and service account with a private directory not writable by the gateway or agent. Generate a 32-byte Ed25519 seed and corresponding public key outside the agent environment. Store them in a secret manager; never add them to GitHub or shell history.
 
-1. Start with the disposable PostgreSQL environment from
-   [GENERIC_TRANSACTION_GATE.md](GENERIC_TRANSACTION_GATE.md). Install and
-   enroll tables, and provision distinct operator, EXECUTE-only executor
-   and read-only witness identities.
-2. Register a separate Microsoft Entra resource API (not Graph or Fabric).
-   Define the AgentProof.Apply app-only role and assign it to one dedicated
-   caller service principal. The token must be issued specifically for the
-   guard API audience, and contain the exact expected tenant, client ID,
-   principal OID and application role.
-3. Host the gateway in a separate trust zone from the agent, with locked
-   deployment files and a DB egress path accessible only to the gateway.
-   Bind to loopback and expose via a properly configured HTTPS reverse proxy.
-4. Provide the following settings from protected service configuration;
-   never inject the DB executor DSN into an agent's shell:
+Witness service environment:
+- AGENTPROOF_WITNESS_SEED_HEX: 64-character lowercase hexadecimal seed; witness server ONLY
+- AGENTPROOF_WITNESS_INBOUND_TOKEN: independent random service credential of at least 32 characters
 
-   - AGENTPROOF_ENTRA_TENANT_ID: expected tenant UUID
-   - AGENTPROOF_ENTRA_AUDIENCE: dedicated api:// guard API audience
-   - AGENTPROOF_ENTRA_CLIENT_ID: allowed caller app UUID
-   - AGENTPROOF_ENTRA_PRINCIPAL_OID: allowed service principal OID
-   - AGENTPROOF_ACTOR_DSN: restricted PostgreSQL EXECUTE-only connection
-   - AGENTPROOF_MCP_RESOURCE_URL: external HTTPS endpoint such as
-     https://guard.example.com/mcp
+On the witness host:
 
-   The required AgentProof.Apply role is fixed in the implementation.
+    python -m pip install -e '.[gateway]'
+    agent-proof-witness --host 127.0.0.1 --port 8030 --db /var/lib/agentproof/witness.sqlite3
 
-5. On a protected Python 3.10+ service instance, start:
+The database is created with private permissions; existing loose permissions or a group/world-writable parent are refused. The witness binds loopback only. Expose its POST /v1/reservations endpoint through an independently configured HTTPS reverse proxy, preferably requiring gateway mTLS plus source allowlisting. It does not expose arbitrary SQL, grant-writing or receipt-deletion APIs.
 
-       pip install -e '.[gateway]'
-       agent-proof-mcp-gateway --host 127.0.0.1 --port 8000
+## Provisioning the gateway
 
-   Public-interface binding is refused. Configure TLS, trusted proxy/Host,
-   origin restrictions and network ACLs separately. The loopback service must
-   not run in the same untrusted host namespace as an agent with arbitrary
-   system administration rights.
+First install the existing one-use PostgreSQL transaction gate in a disposable database, enroll synthetic test tables and create distinct operator, restricted actor and read-only observer accounts. Then configure a separate Microsoft Entra API with an app-only role named AgentProof.Apply. Do not use a Fabric or Graph access token.
+
+Protected gateway environment:
+- AGENTPROOF_ENTRA_TENANT_ID: exact allowed tenant UUID
+- AGENTPROOF_ENTRA_AUDIENCE: dedicated api:// guard API resource identifier
+- AGENTPROOF_ENTRA_CLIENT_ID: exact calling app registration UUID
+- AGENTPROOF_ENTRA_PRINCIPAL_OID: exact calling service principal object UUID
+- AGENTPROOF_ACTOR_DSN: fixed restricted PostgreSQL EXECUTE-only connection
+- AGENTPROOF_MCP_RESOURCE_URL: external HTTPS address ending in /mcp
+- AGENTPROOF_WITNESS_URL: independent HTTPS address ending in /v1/reservations
+- AGENTPROOF_WITNESS_OUTBOUND_TOKEN: secret accepted by witness (not visible to agent)
+- AGENTPROOF_WITNESS_PUBLIC_KEY: out-of-band pinned 64-character Ed25519 public key
+
+The required AgentProof.Apply role cannot be overridden by the agent or environment.
+
+On the protected gateway host:
+
+    python -m pip install -e '.[gateway]'
+    agent-proof-mcp-gateway --host 127.0.0.1 --port 8000
+
+Both servers deliberately bind loopback. Configure HTTPS/TLS, proxy Host/Origin handling, body-size limits, egress ACLs and request-rate limits separately. The MCP SDK enables DNS-rebinding protection by default; adjust the trusted proxy and Host allowlist rather than disabling protections. Reference: https://py.sdk.modelcontextprotocol.io/run/deploy/
 
 ## Codex client
 
-Codex supports HTTPS remote MCP connections and tokens from a named environment
-variable. Obtain a short-lived Entra API access token through an authorized
-OAuth flow; rotate it when it expires.
+Codex supports remote MCP and bearer credentials supplied via an environment variable. Use a short-lived dedicated Entra API token with its own issuance/refresh mechanism, not a Graph or Fabric token.
 
     codex mcp add agentproof \
-      --url https://guard.example.com/mcp \
+      --url https://guard.example.invalid/mcp \
       --bearer-token-env-var AGENTPROOF_MCP_TOKEN
 
-Never configure this as an agent-local stdio MCP server. The MCP SDK does
-not apply HTTP OAuth authorization to stdio/in-memory clients. This tool
-additionally checks that an authenticated HTTP identity context exists and
-re-verifies the token before any DB call.
-
-There is one exposed tool:
+There is just one exposed action:
 
     apply_preapproved_postgres_change(action_id="operator-issued-uuid")
 
-The result state is submitted_unverified, never verified: an independent
-SELECT-only witness must run agent-guarded observe and agent-guarded check
-against the operator's trusted contract after the transaction.
+The gateway checks identity and receives a signed pre-execution ACK before attempting the fixed restricted PostgreSQL function. The database separately verifies the operator-created expiring one-use grant. A signed reservation is evidence of an accepted intent, NOT proof the DB transaction committed.
 
-## Offline tests
+Success is reported only as submitted_unverified. Afterward, a separately privileged witness runs agent-guarded observe and agent-guarded check using the trusted operator contract. If execution times out, the DB may already have committed. The witness prevents automated re-execution under the same UUID; an operator must reconcile the DB state and issue a fresh grant if needed.
 
-    python -m unittest discover -s tests -p 'test_mcp_gateway.py' -v
+## Independent public-key inspection
 
-For HTTP transport tests:
+Through a protected out-of-band administrative channel, export the witness's ordered signed receipt array as a JSON file. An independent auditor verifies without the witness signing key, PostgreSQL credentials or raw action UUIDs:
 
-    pip install -e '.[gateway]' 'httpx>=0.27,<1'
+    agent-proof-witness-verify \
+      --file witness-export.json \
+      --public-key-hex <out-of-band-trusted-public-key> \
+      --expected-head <previously-pinned-last-receipt-sha256>
+
+Verification covers signatures, records, sequence continuity and previous-receipt hashes. It reports VERIFIED_PREFIX, never a guarantee of all agent activity. A trusted head obtained independently prevents *truncation relative to that head*, not withholding of later reservations. SHA-256-hashed UUIDs are pseudonymous, not encrypted.
+
+Future public blockchain anchoring is separate research in PR #14: https://github.com/mhatipog/agent-proof-pack/pull/14
+
+## Synthetic tests (no secrets or production access)
+
+    python -m pip install -e '.[gateway]' 'httpx>=0.27,<1'
     python -m unittest discover -s tests -p 'test_mcp_gateway*.py' -v
+    python -m unittest discover -s tests -p 'test_witness_reservations.py' -v
 
-The synthetic CI workflow contains no real tokens, production data or
-PostgreSQL credentials. Existing gate integration tests separately exercise
-actual DB transaction constraints.
+Tests exercise fake/real RSA JWT claims through MCP HTTP, wrong role/identity, failed witness blocking execution, independent signed reservations and fresh challenges, disk persistence and concurrent duplicate rejection, attempted replay after an ambiguous database result, tampered export and pinned head detection. The original dependency-free test suite still runs without optional gateway packages.
 
-## Important limitations
+## Limits before a live adversarial Codex trial
 
-- No live network-isolated Codex-to-PostgreSQL deployment has been validated.
-  Container/VM egress policies and absence of bypass paths need explicit tests.
-- No durable pre-execution witness acknowledgment or completeness guarantee.
-  Recording an action afterward cannot show that no actions were omitted.
-- HTTP rate limiting, recovery, key rotation and multi-tenant identity policies
-  are not implemented. Replay of the same action UUID is guarded at DB level,
-  and ambiguous commit failures require separate reconciliation.
-- A database owner can bypass the existing transaction gate. Compromised
-  gateway administrators can change the server code or credentials.
-- Ethereum anchoring is a separate, experimental concern in
-  [PR #14](https://github.com/mhatipog/agent-proof-pack/pull/14).
+- No actual isolated Codex deployment, real Entra app registration or protected service proxy has been tested. The agent must be denied alternative network and administrative paths, not just instructed to use MCP.
+- The independent witness can be modified by a compromised witness administrator. Digital signatures prevent falsification by outsiders lacking the private key, not by its owner. Externally pinned heads and future blockchain anchoring improve retrospective detection.
+- A compromised gateway administrator can bypass the witness and call PostgreSQL directly. To prove EVERY protected DB execution has a witness ACK, the DB gate itself would need to validate a witness-signed authorization, or an equally independent enforcement mechanism. This is not implemented.
+- Authenticated agents can reserve arbitrary well-formed UUIDs with no actual grant, potentially exhausting witness disk. Per-principal quotas, grant preflight, ingress rate limits, backups, key rotation and failover remain necessary.
+- SQLite and PostgreSQL are not one distributed transaction. A recorded intent followed by an uncertain DB commit is not proof of rollback or success. Operator reconciliation remains mandatory.
+- The witness records accepted post-authentication intents, NOT rejected token attempts, unrelated shell actions, all model reasoning, or omitted actions.
+- A database owner can bypass the reference table guard. No production safety certification is claimed.
 
-References: [Codex MCP CLI source](https://github.com/openai/codex/blob/main/codex-rs/cli/src/mcp_cmd.rs),
-[MCP SDK HTTP authorization](https://py.sdk.modelcontextprotocol.io/run/authorization/).
+Reference source: https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs
+MCP auth: https://py.sdk.modelcontextprotocol.io/run/authorization/
