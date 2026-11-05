@@ -1,33 +1,53 @@
-# Patch witness (research lab)
+# Patch witness — causal differential lab (v2)
 
-A small **differential evidence gate** for a known synthetic security defect, inspired by OpenAI's 4 November 2026 research, *A thousand fewer paths to root*.
+**A zero-dependency, zero-API-cost experiment** for validating a proposed fix to a *known, synthetic* Python authorization bug.
 
-**Not** a vulnerability scanner, an exploit generator, a sandbox, a root-cause proof, a production patch certifier, or a commercial security product. It intentionally does not examine actual unpublished vulnerabilities.
+This is not a scanner, a code-writing agent, a security sandbox, a proof of exploitability, or a certification of production patches. It makes bounded evidence claims rather than trusting either an agent's summary or a successful end result.
 
-## What it checks
+## How verification works
 
-- The vulnerable version demonstrably has the stated behavior on a specified negative-security probe.
-- The proposed fix removes that behavior **and** preserves defined legitimate behavior.
-- Both observations actually call the claimed target function, using a CPython frame-code identity trace rather than trusting a process exit code or agent narrative.
-- Reports include both source SHA-256 digests, each probe's result, and explicit inconclusive reasons.
-- A cosmetic patch, an unrelated-path workaround, a patch that blocks everybody, or a baseline that never reproduced all fail closed.
+1. **Static gate (zero executions):** SHA-256 identities are calculated for both sources; Python AST fingerprints check that the named target function actually changed. Cosmetic edits and unchanged targets fail closed.
+2. **Differential tests (two executions per case):** A trusted, human-defined contract supplies explicit vulnerable and expected patched behavior. Negative security cases run before preservation cases. Every case gets a fresh namespace; target-function call tracing checks reachability.
+3. **Counterfactual dependency test (one more execution per case):** Replace only the named patched top-level function with its original source, leaving other patched code unchanged. If the original behavior does not return, the changed target alone does not explain the fix and the result is inconclusive.
+4. **Bounded machine-readable evidence:** Source and target fingerprints, probe observations, counterfactual digest, skipped probes, reason codes and execution counts. Budget exhaustion is inconclusive, never success.
 
-### Try it
+The synthetic path-prefix example catches a false authorization of /publicity as if it were /public and preserves legitimate public-file and admin access.
 
-From this directory:
+## Run locally
 
-```sh
-python -m unittest discover -s tests -v
-```
+From this directory, execute: python -m unittest discover -s tests -v
 
-No API calls or external dependencies. All fixtures are toy authorization functions built inside temporary directories by the test suite.
+Python 3.10+; standard library only; no external services, paid API calls, cloud CI, downloads, secrets or database.
 
-## Trust boundary
+The programmatic interface is verify(before_path, after_path, entrypoint, target_function, cases, max_executions=100, fail_fast=True). Each Case has name, positional args, expected before boolean, and expected after boolean. An output status of differential_and_counterfactual_probes_passed refers ONLY to the declared trusted-fixture probes.
 
-The runner `exec`s fixture modules and is **only suitable for locally trusted synthetic code**. Do not point it at untrusted AI-generated patches or third-party source without moving execution into a properly isolated, resource-limited VM/container with no secrets or network access and a separately controlled observer. The trace confirms that the target function ran; it **cannot prove that that function caused the observed authorization result**. It does not test full vulnerability variants, native-memory vulnerabilities, kernel code, build reproducibility, or runtime exploitability.
+**Never run this against files from an untrusted agent or an external PR:** fixture loading uses Python exec in the current process.
 
-For useful future evidence, the independent witness must additionally observe control-flow/data-flow attribution across the actual bug site, run known attack variants, check regressions, bind tested artifacts to reviewed commits and sign attestations from a separate identity. No trust or security certification should be claimed before those extensions and adversarial review.
+## Why causal checks matter
 
-## Source
+A trivial implementation can return the desired final answer for unrelated reasons: denying everybody, routing around the vulnerable function, or filtering in a caller while the vulnerable function remains unchanged. This lab exercises each of these. Even when the named target is both called and superficially edited, the real outcome may be caused elsewhere. Counterfactual target reversion detects this specific false-attribution case.
 
-[OpenAI: A thousand fewer paths to root (4 Nov 2026)](https://openai.com/index/a-thousand-fewer-paths-to-root/). An early campaign reported 20/200 apparently successful exploits that took a *different* vulnerability than the assigned one. That is why this experimental gate requires a trace of the named target function and never treats the final outcome alone as sufficient evidence.
+A successful revert test is **stronger evidence of dependency, not proof of causal completeness**. The patch could still have bypasses, hidden state, unrelated side effects or missing variants.
+
+## Free, extensible architecture
+
+Contract → cheap triage → observation adapter → independent evaluation → evidence.
+
+The existing observation adapter understands trusted local Python functions and boolean results only. Other languages and services require isolated external executors; do not turn this in-process evaluator into a generic patch runner.
+
+- Prefer local runtimes and standard-library parsers.
+- Record JSON evidence and SHA-256 identities. Git is a free content ledger, not trusted runtime attestation.
+- Protect specifications, observer and verifier-held secrets from the agent evaluated.
+- Future caching must key on code, contract, runner and environment identities, with invalidation on change.
+- Execute untrusted patches only inside properly isolated disposable environments with network/secrets/filesystem controls.
+- Avoid continuous cloud polling, expensive model loops and unnecessary GitHub Actions.
+
+## Threat boundaries
+
+This runner is **not isolated**: importing a fixture can access the host filesystem, start subprocesses or use the network. Per-case namespaces reduce accidental state contamination but are not a security boundary. Python profiling is not tamper-proof against hostile code. There are **no timeouts or memory limits**; max_executions counts probes but cannot stop a hanging probe.
+
+Counterfactual construction supports one undecorated top-level Python function. Nested functions, decorators, native code and broader behavior need other adapters. JSON is not signed; SHA-256 binds source bytes but does not make the source or runner trusted.
+
+## Reference
+
+OpenAI, [A thousand fewer paths to root](https://openai.com/index/a-thousand-fewer-paths-to-root/) (4 November 2026), reports that 20/200 apparently successful exploits in an early campaign followed a *different vulnerability* than assigned. Our small lab addresses that methodological failure mode without reproducing the Linux research, importing unpublished exploits or paying for model inference.
