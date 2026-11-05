@@ -1,0 +1,61 @@
+name: PostgreSQL witness-enforced admission
+
+on:
+  push:
+    paths:
+      - 'agentproof/witness_db.py'
+      - 'agentproof/witness_http.py'
+      - 'agentproof/mcp_gateway.py'
+      - 'examples/postgres_witness_gate/**'
+      - 'tests/test_witness_db.py'
+      - 'tests/integration_witness_db.py'
+      - '.github/workflows/witness-db-gate.yml'
+  pull_request:
+    paths:
+      - 'agentproof/witness_db.py'
+      - 'agentproof/witness_http.py'
+      - 'agentproof/mcp_gateway.py'
+      - 'examples/postgres_witness_gate/**'
+      - 'tests/test_witness_db.py'
+      - 'tests/integration_witness_db.py'
+      - '.github/workflows/witness-db-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: witness-db-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  witness-db:
+    # Ephemeral public-project runner; no private credentials or shared DB.
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: disposable-admin-pass
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AGENTPROOF_WITNESS_PG_ADMIN_DSN: postgresql://postgres:disposable-admin-pass@localhost:5432/postgres
+      AGENTPROOF_WITNESS_PG_ACTOR_DSN: postgresql://agentproof_witness_ci_actor:isolated-witness-actor-pass@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install DB driver and witness cryptography
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<48'
+      - name: Check witness MAC, isolation and gateway strict mode offline
+        run: python -m unittest discover -s tests -p 'test_witness_db.py' -v
+      - name: Execute attack regressions against disposable PostgreSQL 16
+        run: python -m unittest discover -s tests -p 'integration_witness_db.py' -v
