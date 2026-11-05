@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'contracts/AgentProofAnchor.sol'
+      - 'scripts/test_anchor_contract.cjs'
       - '.github/workflows/chain-anchor-contract.yml'
   pull_request:
     paths:
@@ -28,3 +29,7 @@ jobs:
           npx --yes solc@0.8.30 --version
           npx --yes solc@0.8.30 --bin --abi contracts/AgentProofAnchor.sol -o /tmp/agent-proof-solidity
           test -s /tmp/agent-proof-solidity/contracts_AgentProofAnchor_sol_AgentProofAnchor.bin
+      - name: Test synthetic EVM contract behaviors
+        run: |
+          npm install --no-save --no-package-lock solc@0.8.30 ethers@6.15.0 ganache@7.9.2
+          node scripts/test_anchor_contract.cjs
