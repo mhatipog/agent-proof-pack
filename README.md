@@ -14,6 +14,10 @@ The optional [Entra action executor](docs/ENTRA_ACTION_EXECUTOR.md) binds a prea
 
 Run the [signed-token authorization test suite](.github/workflows/entra-authorization.yml) to exercise forged signatures, wrong identities, missing roles and expiry. Cloud access requires a separately configured, dedicated guard API registration and protected execution service; the command wrapper alone is not a security boundary against an agent with arbitrary shell access.
 
+## Experimental blockchain evidence extension
+
+The [witnessed EVM checkpoint prototype](docs/CHAIN_ANCHOR.md) adds witness-signed, privacy-salted Merkle batches of independent agent-action receipts, offline inclusion/continuity verification and a minimal Base/Ethereum-compatible anchoring contract. It is **not deployed** and does not yet guarantee log completeness or non-bypassable agent execution; those require an isolated authenticated gateway, durable independent witness and target-side enforcement.
+
 ## Architecture
 
 ![Agent Proof Pack architecture: trusted approval, restricted agent execution, independent verification, and two evidence modes](docs/architecture.svg)
