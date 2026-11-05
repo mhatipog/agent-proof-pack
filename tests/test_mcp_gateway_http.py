@@ -16,7 +16,7 @@ except ImportError:
 
 from agentproof.entra import AuthorizationDenied
 from agentproof.mcp_gateway import GatewayConfig, GuardedActionGateway
-from test_mcp_gateway import POLICY
+from test_mcp_gateway import POLICY, config, SyntheticWitness
 
 
 @unittest.skipUnless(_HAS_SDK, "optional mcp/httpx gateway dependencies not installed")
@@ -28,9 +28,9 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
         def apply(dsn, action_id):
             operations.append(action_id)
             raise AssertionError("transport admitted unauthenticated tool")
-        config = GatewayConfig(POLICY, "postgresql://synthetic-only",
-                               "https://agent-proof.example.invalid/mcp")
-        gateway = GuardedActionGateway(config, verifier=verify, executor=apply)
+        config = config(actor_dsn="postgresql://synthetic-only")
+        gateway = GuardedActionGateway(config, verifier=verify, executor=apply,
+                                       witness=SyntheticWitness())
         server = build_mcp_server(config, gateway=gateway)
         app = server.streamable_http_app(host="127.0.0.1",
                                          stateless_http=True, json_response=True)
@@ -64,10 +64,10 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
             actions.append((dsn, action))
             return {"action_id": action, "state": "submitted_unverified"}
 
-        config = GatewayConfig(POLICY, "postgresql://mock-execute-only",
-                               "https://agent-proof.example.invalid/mcp")
+        config = config(actor_dsn="postgresql://mock-execute-only")
         server = build_mcp_server(config, gateway=GuardedActionGateway(
-            config, verifier=verify, executor=execute))
+            config, verifier=verify, executor=execute,
+            witness=SyntheticWitness()))
         app = server.streamable_http_app(host="127.0.0.1",
                                          stateless_http=True, json_response=True)
         req = {
@@ -134,10 +134,10 @@ class TransportAdmissionTests(unittest.IsolatedAsyncioTestCase):
             executions.append(action)
             return {"action_id": action, "state": "submitted_unverified"}
 
-        config = GatewayConfig(POLICY, "postgresql://synthetic-only",
-                               "https://agent-proof.example.invalid/mcp")
+        config = config(actor_dsn="postgresql://synthetic-only")
         server = build_mcp_server(config, gateway=GuardedActionGateway(
-            config, verifier=verify, executor=execute))
+            config, verifier=verify, executor=execute,
+            witness=SyntheticWitness()))
         app = server.streamable_http_app(host="127.0.0.1",
                                          stateless_http=True, json_response=True)
         req = {
