@@ -6,6 +6,7 @@ on:
       - 'agentproof/mcp_gateway.py'
       - 'agentproof/witness_http.py'
       - 'agentproof/witness_reservations.py'
+      - 'agentproof/witness_verify.py'
       - 'tests/test_witness_reservations.py'
       - 'tests/test_mcp_gateway*.py'
       - 'docs/MCP_GATEWAY.md'
@@ -14,6 +15,10 @@ on:
   pull_request:
     paths:
       - 'agentproof/mcp_gateway.py'
+      - 'agentproof/witness_http.py'
+      - 'agentproof/witness_reservations.py'
+      - 'agentproof/witness_verify.py'
+      - 'tests/test_witness_reservations.py'
       - 'tests/test_mcp_gateway*.py'
       - 'docs/MCP_GATEWAY.md'
       - 'pyproject.toml'
