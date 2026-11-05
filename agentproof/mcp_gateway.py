@@ -6,6 +6,7 @@ authenticated HTTPS endpoint. It offers no grant-writing or arbitrary SQL tools.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from dataclasses import dataclass
 import os
 import re
@@ -150,7 +151,7 @@ def build_mcp_server(config: GatewayConfig, *, gateway: GuardedActionGateway | N
     class EntraTokenVerifier(TokenVerifier):
         async def verify_token(self, token: str) -> AccessToken | None:
             try:
-                identity = guard.verify_caller(token)
+                identity = await asyncio.to_thread(guard.verify_caller, token)
             except GatewayDenied:
                 return None
             return AccessToken(token=token, client_id=identity["application_id"],
@@ -172,7 +173,7 @@ def build_mcp_server(config: GatewayConfig, *, gateway: GuardedActionGateway | N
     )
 
     @server.tool()
-    def apply_preapproved_postgres_change(action_id: str) -> dict:
+    async def apply_preapproved_postgres_change(action_id: str) -> dict:
         """Consume a trusted operator's one-use DB grant; returns unverified submission."""
         identity = get_access_token()
         # Direct in-memory and stdio invocation skips HTTP auth; refuse it.
@@ -180,7 +181,9 @@ def build_mcp_server(config: GatewayConfig, *, gateway: GuardedActionGateway | N
             raise GatewayDenied("action denied or unavailable")
         # Reverify independently: an SDK-side approval or injected token context
         # must not become the only enforcement boundary.
-        return guard.apply(identity.token, action_id)
+        # Blocking JWT/JWKS, HTTPS witness and PostgreSQL I/O must not block
+        # MCP's shared event loop under simultaneous agent requests.
+        return await asyncio.to_thread(guard.apply, identity.token, action_id)
 
     return server
 
