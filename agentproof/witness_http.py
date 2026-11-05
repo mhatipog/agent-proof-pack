@@ -21,6 +21,7 @@ from urllib.request import (
 from urllib.error import HTTPError, URLError
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from .witness_db import mint_db_admission, validate_db_admission
 from .witness_reservations import (
     AlreadyReserved, RateLimited, DurableWitnessLedger, WitnessDenied, receipt_hash,
     verify_reservation,
@@ -91,7 +92,7 @@ class WitnessClient:
                 raise WitnessDenied("malformed witness response")
             return result
 
-    def reserve(self, action_id: str, principal_id: str) -> str:
+    def _reserve_and_check(self, action_id: str, principal_id: str) -> tuple[dict, dict]:
         nonce = secrets.token_hex(16)
         try:
             response = self._sender({
@@ -99,20 +100,36 @@ class WitnessClient:
                 "principal_id": principal_id,
                 "nonce": nonce,
             })
-            if not isinstance(response, dict) or set(response) != {"receipt"}:
+            if (not isinstance(response, dict) or
+                    set(response) not in ({"receipt"}, {"receipt", "db_admission"})):
                 raise WitnessDenied("untrusted reservation response")
             receipt = response["receipt"]
             verify_reservation(
                 receipt, public_key_hex=self.public_key,
                 action_id=action_id, principal_id=principal_id, nonce=nonce)
-            return receipt_hash(receipt)
+            return receipt, response
         except (WitnessDenied, HTTPError, URLError, OSError, ValueError, TypeError) as exc:
             raise WitnessDenied("independent reservation unavailable") from exc
 
+    def reserve(self, action_id: str, principal_id: str) -> str:
+        """Legacy synthetic admission: a signed, independently stored receipt."""
+        receipt, _ = self._reserve_and_check(action_id, principal_id)
+        return receipt_hash(receipt)
 
-def make_handler(ledger: DurableWitnessLedger, bearer: str):
+    def reserve_for_database(self, action_id: str, principal_id: str) -> dict:
+        """Required for the DB-enforced path; MAC is verified inside PostgreSQL."""
+        receipt, response = self._reserve_and_check(action_id, principal_id)
+        return validate_db_admission(response.get("db_admission"),
+                                     signed_receipt_sha256=receipt_hash(receipt))
+
+
+def make_handler(ledger: DurableWitnessLedger, bearer: str, *, db_mac_key_hex=None):
     if type(bearer) is not str or not 32 <= len(bearer) <= 2048:
         raise WitnessDenied("invalid reservation service access secret")
+
+    if db_mac_key_hex is not None and (
+            type(db_mac_key_hex) is not str or _HEX64.fullmatch(db_mac_key_hex) is None):
+        raise WitnessDenied("invalid database MAC secret")
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AgentProofWitness"
@@ -164,7 +181,14 @@ def make_handler(ledger: DurableWitnessLedger, bearer: str):
             try:
                 receipt = ledger.reserve(payload["action_id"],
                                          payload["principal_id"], payload["nonce"])
-                return self._respond(201, {"receipt": receipt})
+                # This token is HMAC-signed only by the independent witness;
+                # the gateway cannot issue an equivalent proof without the key.
+                response = {"receipt": receipt}
+                if db_mac_key_hex is not None:
+                    response["db_admission"] = mint_db_admission(
+                        receipt, action_id=payload["action_id"],
+                        mac_key_hex=db_mac_key_hex)
+                return self._respond(201, response)
             except AlreadyReserved:
                 return self._respond(409, {"error": "already_reserved"})
             except RateLimited:
@@ -186,6 +210,9 @@ def main(argv=None) -> int:
         parser.error("witness must bind loopback behind its independent HTTPS proxy")
     seed = os.environ.get("AGENTPROOF_WITNESS_SEED_HEX", "")
     bearer = os.environ.get("AGENTPROOF_WITNESS_INBOUND_TOKEN", "")
+    db_mac_key_hex = os.environ.get("AGENTPROOF_WITNESS_DB_MAC_KEY_HEX", "")
+    if not isinstance(db_mac_key_hex, str) or _HEX64.fullmatch(db_mac_key_hex) is None:
+        parser.error("independent DB admission MAC secret is required")
     if not isinstance(seed, str) or _HEX64.fullmatch(seed) is None:
         parser.error("independent 32-byte Ed25519 signing seed required")
     # Never make the signing key available to the gateway or an agent process.
@@ -193,7 +220,7 @@ def main(argv=None) -> int:
     try:
         ledger = DurableWitnessLedger(args.db, Ed25519PrivateKey.from_private_bytes(
             bytes.fromhex(seed)), max_per_hour=args.max_reservations_per_hour)
-        handler = make_handler(ledger, bearer)
+        handler = make_handler(ledger, bearer, db_mac_key_hex=db_mac_key_hex)
     except (WitnessDenied, ValueError) as exc:
         parser.error(str(exc))
     server = ThreadingHTTPServer((args.host, args.port), handler)
