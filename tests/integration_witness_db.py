@@ -207,5 +207,88 @@ class RealWitnessGateTests(unittest.TestCase):
         self.assertEqual(self.state(), ("initial", "do-not-edit"))
 
 
+    def test_authenticated_gateway_signed_witness_real_database_effect(self):
+        """One synthetic JWT -> signed ledger -> DB HMAC -> real transaction.
+
+        JWK issuance and witness HTTP transport are replaced with deterministic
+        synthetic adapters. Database SQL and proof verification are real.
+        """
+        import jwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from agentproof.entra import EntraPolicy, verify_access_token
+        from agentproof.mcp_gateway import GatewayConfig, GuardedActionGateway, GatewayDenied
+        from agentproof.witness_http import WitnessClient
+        from agentproof.witness_reservations import witness_public_key, receipt_hash
+
+        tenant = "11111111-1111-4111-8111-111111111111"
+        client_id = "22222222-2222-4222-8222-222222222222"
+        principal = "33333333-3333-4333-8333-333333333333"
+        policy = EntraPolicy(
+            tenant_id=tenant, audience="api://agent-proof-witness-test",
+            application_id=client_id, principal_object_id=principal,
+            required_role="AgentProof.Apply")
+        identity_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+        class FakeJwks:
+            def get_signing_key_from_jwt(self, token):
+                return type("SignedKey", (), {"key": identity_key.public_key()})()
+
+        now = int(datetime.now(timezone.utc).timestamp())
+        claims = {"ver": "2.0",
+                  "iss": "https://login.microsoftonline.com/" + tenant + "/v2.0",
+                  "tid": tenant, "aud": policy.audience,
+                  "azp": client_id, "oid": principal,
+                  "roles": ["AgentProof.Apply"], "idtyp": "app",
+                  "iat": now, "nbf": now - 10, "exp": now + 120}
+
+        def token(**overrides):
+            return jwt.encode({**claims, **overrides}, identity_key,
+                              algorithm="RS256", headers={"kid": "synthetic"})
+
+        action = self.grant()
+        pubkey = witness_public_key(self.ledger.private_key)
+        witness_called = []
+        def signed_sender(payload):
+            witness_called.append(payload["action_id"])
+            receipt = self.ledger.reserve(payload["action_id"],
+                                          payload["principal_id"], payload["nonce"])
+            return {"receipt": receipt,
+                    "db_admission": mint_db_admission(
+                        receipt, action_id=payload["action_id"],
+                        mac_key_hex=KEY.hex())}
+
+        wclient = WitnessClient(
+            "https://witness.example.invalid/v1/reservations",
+            "s" * 48, pubkey, sender=signed_sender)
+        cfg = GatewayConfig(
+            policy=policy, actor_dsn=ACTOR,
+            resource_url="https://gateway.example.invalid/mcp",
+            witness_url="https://witness.example.invalid/v1/reservations",
+            witness_bearer="s" * 48,
+            witness_public_key_hex=pubkey, require_db_witness=True)
+        gate = GuardedActionGateway(
+            cfg, verifier=lambda t, p: verify_access_token(
+                t, p, jwk_client=FakeJwks()), witness=wclient,
+            executor=lambda *a: self.fail("unwitnessed SQL function called"))
+
+        with self.assertRaises(GatewayDenied):
+            gate.apply(token(aud="https://graph.microsoft.com"), action)
+        self.assertEqual(witness_called, [])
+        self.assertFalse(self.consumed(action))
+
+        result = gate.apply(token(), action)
+        self.assertEqual(result["state"], "submitted_unverified")
+        self.assertEqual(witness_called, [action])
+        self.assertTrue(self.consumed(action))
+        self.assertEqual(self.state(), ("authorized", "do-not-edit"))
+        self.assertEqual(len(self.ledger.read_all()), 1)
+        self.assertEqual(result["witness_reservation_sha256"],
+                         receipt_hash(self.ledger.read_all()[0]))
+        self.assertFalse(result["independent_effect_verified"])
+        with self.assertRaises(GatewayDenied):
+            gate.apply(token(), action)
+        self.assertEqual(witness_called, [action])
+
+
 if __name__ == "__main__":
     unittest.main()
