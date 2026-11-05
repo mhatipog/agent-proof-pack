@@ -19,7 +19,7 @@ try:
     import psycopg
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from agentproof.witness_db import _payload, apply_with_db_witness, mint_db_admission
-    from agentproof.witness_reservations import DurableWitnessLedger
+    from agentproof.witness_reservations import DurableWitnessLedger, WitnessDenied
     HAS_DEPS = True
 except ImportError:
     HAS_DEPS = False
@@ -172,7 +172,7 @@ class RealWitnessGateTests(unittest.TestCase):
                     action, receipt["receipt_sha256"], seconds),
                     hashlib.sha256).hexdigest(),
             }
-            with self.assertRaises(psycopg.Error):
+            with self.assertRaises(WitnessDenied):
                 apply_with_db_witness(ACTOR, action, forged_as_witness)
         self.assertFalse(self.consumed(action))
 
@@ -180,7 +180,7 @@ class RealWitnessGateTests(unittest.TestCase):
         action = self.grant()
         token = self.admission(action)
         apply_with_db_witness(ACTOR, action, token)
-        with self.assertRaises(psycopg.Error):
+        with self.assertRaises(WitnessDenied):
             apply_with_db_witness(ACTOR, action, token)
         self.assertEqual(self.state(), ("authorized", "do-not-edit"))
 
@@ -191,7 +191,7 @@ class RealWitnessGateTests(unittest.TestCase):
             try:
                 apply_with_db_witness(ACTOR, action, token)
                 return True
-            except psycopg.Error:
+            except WitnessDenied:
                 return False
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(attempt, range(8)))
@@ -201,7 +201,7 @@ class RealWitnessGateTests(unittest.TestCase):
 
     def test_failed_underlying_row_guard_rolls_back_without_consumption(self):
         action = self.grant(old_value="not-current")
-        with self.assertRaises(psycopg.Error):
+        with self.assertRaises(WitnessDenied):
             apply_with_db_witness(ACTOR, action, self.admission(action))
         self.assertFalse(self.consumed(action))
         self.assertEqual(self.state(), ("initial", "do-not-edit"))
