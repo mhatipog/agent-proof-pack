@@ -10,9 +10,9 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 
 ## Experimental remote MCP authorization gateway
 
-The [remote MCP gateway](docs/MCP_GATEWAY.md) offers one narrow, Entra-authenticated tool to execute *preapproved* PostgreSQL action UUIDs through the existing transaction guard. It accepts no agent-supplied SQL or grants, binds only to loopback behind a separately configured HTTPS proxy, and returns **submitted_unverified** rather than pretending the effect has been proven.
+The [remote MCP gateway](docs/MCP_GATEWAY.md) offers one narrow, Entra-authenticated tool to execute *preapproved* PostgreSQL action UUIDs through the existing transaction guard. Before execution it **requires an independently signed, durable one-use reservation** from a separate witness service. That witness keeps its own Ed25519 key and SQLite journal; an auditor can verify the signed receipt chain with a pinned public key and a separately obtained head digest.
 
-This is an **isolated-service prototype**: secure deployment requires separate credentials, restricted network egress and an independently controlled witness. No live Codex deployment or real Entra/DB gateway credentials are part of this feature.
+The gateway accepts no agent-supplied SQL or grants, binds to loopback behind a separately configured HTTPS proxy, and returns **submitted_unverified**, not proof of a completed DB effect. This is an **isolated-service prototype**, not production-certified containment: deployment still requires separately controlled credentials and network egress, while completeness against a compromised gateway requires additional enforcement. No live Codex deployment or real Entra/DB gateway credentials are part of this feature.
 
 ## Entra-authenticated guarded execution
 
