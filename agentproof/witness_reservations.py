@@ -7,7 +7,9 @@ that an agent has no bypass routes, or that the witness operator is honest.
 from __future__ import annotations
 
 import hashlib
-import hmac
+from contextlib import closing
+import os
+import stat
 import json
 import re
 import sqlite3
@@ -120,10 +122,23 @@ class DurableWitnessLedger:
         self.path = path
         self.private_key = private_key
         p = Path(path)
-        if p.is_symlink() or p.parent.is_symlink() or not p.parent.is_dir():
-            raise WitnessDenied("unsafe witness database path")
+        if (p.is_symlink() or p.parent.is_symlink() or
+                not p.parent.is_dir() or p.parent.stat().st_mode & 0o022):
+            raise WitnessDenied("witness directory must not be group/world writable")
         try:
-            with self._connect() as conn:
+            # Force private DB permissions on creation; do not silently chmod
+            # an existing unsafe database. A private, independent host identity
+            # and a non-agent-writable directory are still mandatory.
+            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            try:
+                info = os.fstat(fd)
+                if (not stat.S_ISREG(info.st_mode) or
+                        stat.S_IMODE(info.st_mode) & 0o077 or
+                        info.st_uid != os.getuid()):
+                    raise WitnessDenied("unsafe witness database ownership or permissions")
+            finally:
+                os.close(fd)
+            with closing(self._connect()) as conn:
                 conn.execute("""CREATE TABLE IF NOT EXISTS reservations (
                     sequence INTEGER PRIMARY KEY,
                     action_sha256 TEXT NOT NULL UNIQUE,
@@ -145,7 +160,7 @@ class DurableWitnessLedger:
         if type(nonce) is not str or _HEX32.fullmatch(nonce) is None:
             raise WitnessDenied("invalid reservation challenge")
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn:
                 try:
                     conn.execute("BEGIN IMMEDIATE")
                     if conn.execute("SELECT 1 FROM reservations WHERE action_sha256=?",
@@ -185,7 +200,7 @@ class DurableWitnessLedger:
     def read_all(self) -> list[dict]:
         """Auditor export, through a protected administrative channel only."""
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn:
                 rows = conn.execute(
                     "SELECT sequence, signed_receipt_json, receipt_sha256 FROM "
                     "reservations ORDER BY sequence").fetchall()
