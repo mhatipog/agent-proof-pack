@@ -57,7 +57,7 @@ BEGIN
     END IF;
 
     now_epoch := pg_catalog.floor(
-        pg_catalog.extract(epoch FROM pg_catalog.clock_timestamp())
+        pg_catalog.date_part('epoch', pg_catalog.clock_timestamp())
     )::bigint;
     -- Fail closed on an unavailable/stale witness even when the operator's
     -- underlying database grant is still valid.
