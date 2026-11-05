@@ -15,6 +15,7 @@ from uuid import UUID
 
 from .entra import AuthorizationDenied, EntraPolicy, verify_access_token
 from .generic_cli import apply_approved
+from .witness_db import apply_with_db_witness, validate_db_admission
 from .witness_http import WitnessClient, WitnessDenied
 
 _ACTION_ID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\Z")
@@ -32,9 +33,12 @@ class GatewayConfig:
     witness_url: str = ""
     witness_bearer: str = ""
     witness_public_key_hex: str = ""
+    require_db_witness: bool = False  # Only legacy synthetic instantiations omit this
 
     def validate(self) -> None:
         self.policy.validate()
+        if type(self.require_db_witness) is not bool:
+            raise GatewayDenied("invalid database witness mode")
         try:
             url = urlsplit(self.resource_url)
             valid = (url.scheme == "https" and url.hostname is not None and
@@ -70,6 +74,7 @@ class GatewayConfig:
             witness_url=env.get("AGENTPROOF_WITNESS_URL", ""),
             witness_bearer=env.get("AGENTPROOF_WITNESS_OUTBOUND_TOKEN", ""),
             witness_public_key_hex=env.get("AGENTPROOF_WITNESS_PUBLIC_KEY", ""),
+            require_db_witness=True,  # Production CLI cannot use the legacy bypass route.
         )
         config.validate()
         return config
@@ -83,11 +88,13 @@ class GuardedActionGateway:
     """
 
     def __init__(self, config: GatewayConfig, *, verifier=verify_access_token,
-                 executor=apply_approved, witness=None):
+                 executor=apply_approved, witness=None,
+                 witnessed_executor=apply_with_db_witness):
         config.validate()
         self.config = config
         self._verifier = verifier
         self._executor = executor
+        self._witnessed_executor = witnessed_executor
         self._witness = witness if witness is not None else WitnessClient(
             config.witness_url, config.witness_bearer, config.witness_public_key_hex)
 
@@ -116,21 +123,37 @@ class GuardedActionGateway:
             raise GatewayDenied("action denied or unavailable") from exc
 
         identity = self.verify_caller(token)
-        # Durable, independently signed ACK is MANDATORY before DB execution.
-        # A second admission of this UUID is refused even if the prior call
-        # timed out. The operator must reconcile before issuing a new grant.
+        # ACK is mandatory before any DB execution, and must be tied to the
+        # exact requested action and independently verified Entra principal.
         try:
-            reservation_sha256 = self._witness.reserve(
-                action_id, identity["principal_object_id"])
-        except WitnessDenied as exc:
+            if self.config.require_db_witness:
+                admission = self._witness.reserve_for_database(
+                    action_id, identity["principal_object_id"])
+                validate_db_admission(
+                    admission, signed_receipt_sha256=admission.get("receipt_sha256")
+                    if isinstance(admission, dict) else "")
+                reservation_sha256 = admission["receipt_sha256"]
+            else:
+                # Retained only for the synthetic/legacy reference tests.
+                # GatewayConfig.from_env() ALWAYS disables this bypass path.
+                reservation_sha256 = self._witness.reserve(
+                    action_id, identity["principal_object_id"])
+        except (WitnessDenied, AttributeError, TypeError, ValueError) as exc:
             raise GatewayDenied("action denied or unavailable") from exc
         try:
-            result = self._executor(self.config.actor_dsn, action_id)
+            if self.config.require_db_witness:
+                # Direct old one-argument SQL entry point must be REVOKED from
+                # executor role. The new DB function validates HMAC *inside*
+                # the transaction before consuming the operator's one-use grant.
+                result = self._witnessed_executor(
+                    self.config.actor_dsn, action_id, admission)
+            else:
+                result = self._executor(self.config.actor_dsn, action_id)
             if (not isinstance(result, dict) or result.get("action_id") != action_id
                     or result.get("state") != "submitted_unverified"):
                 raise GatewayDenied("action denied or unavailable")
         except Exception as exc:
-            # A timeout may follow a committed DB transaction. Never report rollback.
+            # A timeout may follow a successful commit; never claim rollback.
             raise GatewayDenied("action denied or unavailable") from exc
         return {"action_id": action_id, "state": "submitted_unverified",
                 "independent_effect_verified": False,
