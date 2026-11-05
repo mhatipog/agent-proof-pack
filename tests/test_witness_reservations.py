@@ -5,7 +5,7 @@ try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from agentproof.witness_http import WitnessClient, make_handler
     from agentproof.witness_reservations import (
-        AlreadyReserved, DurableWitnessLedger, WitnessDenied, receipt_hash,
+        AlreadyReserved, RateLimited, DurableWitnessLedger, WitnessDenied, receipt_hash,
         verify_reservation, witness_public_key, verify_witness_export,
     )
     from agentproof.witness_verify import verify_file
@@ -159,6 +159,19 @@ class WitnessLedgerTests(unittest.TestCase):
         self.assertEqual(calls, [ACTION])
         self.assertEqual(len(self.ledger.read_all()), 1)
 
+
+    def test_atomic_principal_quota_rejects_excess_and_retains_contiguous_chain(self):
+        limited_db = str(Path(self.tmp.name) / "limited.sqlite3")
+        limited = DurableWitnessLedger(limited_db, self.key, max_per_hour=2)
+        limited.reserve(ACTION, PRINCIPAL, "1" * 32)
+        second_id = str(uuid4())
+        limited.reserve(second_id, PRINCIPAL, "2" * 32)
+        with self.assertRaises(RateLimited):
+            limited.reserve(str(uuid4()), PRINCIPAL, "3" * 32)
+        with self.assertRaises(AlreadyReserved):
+            limited.reserve(ACTION, PRINCIPAL, "4" * 32)
+        self.assertEqual([r["record"]["sequence"] for r in limited.read_all()], [1, 2])
+        self.assertTrue(verify_witness_export(limited.read_all(), self.pub))
 
     def test_public_key_export_verifier_detects_tampering_and_pinned_head(self):
         from json import dumps
