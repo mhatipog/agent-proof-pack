@@ -1,0 +1,30 @@
+name: Isolated agent network regression
+
+on:
+  push:
+    paths:
+      - 'labs/network_isolation/**'
+      - '.github/workflows/network-isolation.yml'
+  pull_request:
+    paths:
+      - 'labs/network_isolation/**'
+      - '.github/workflows/network-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-container-topology:
+    # Runs only on a disposable public-repo GitHub-hosted VM.
+    # Never mount the host Docker socket inside an untrusted agent.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe allowed and forbidden TCP paths in three isolated Docker networks
+        run: bash labs/network_isolation/verify.sh
