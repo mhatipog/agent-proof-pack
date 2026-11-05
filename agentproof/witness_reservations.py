@@ -36,6 +36,10 @@ class AlreadyReserved(WitnessDenied):
     """An action can only obtain one pre-execution reservation."""
 
 
+class RateLimited(WitnessDenied):
+    """Principal's operator-set admission quota is exhausted."""
+
+
 def _json(value: object) -> bytes:
     try:
         return json.dumps(value, sort_keys=True, separators=(",", ":"),
@@ -155,11 +159,15 @@ class DurableWitnessLedger:
     crash-durable admission and uniqueness, not operator-proof immutability.
     """
 
-    def __init__(self, path: str, private_key: Ed25519PrivateKey):
+    def __init__(self, path: str, private_key: Ed25519PrivateKey, *,
+                 max_per_hour: int = 300):
         if not isinstance(private_key, Ed25519PrivateKey):
             raise WitnessDenied("witness signing key unavailable")
         if not isinstance(path, str) or not path or path == ":memory:":
             raise WitnessDenied("durable witness database path required")
+        if type(max_per_hour) is not int or not 1 <= max_per_hour <= 10000:
+            raise WitnessDenied("invalid server-side reservation quota")
+        self.max_per_hour = max_per_hour
         self.path = path
         self.private_key = private_key
         p = Path(path)
@@ -183,9 +191,13 @@ class DurableWitnessLedger:
                 conn.execute("""CREATE TABLE IF NOT EXISTS reservations (
                     sequence INTEGER PRIMARY KEY,
                     action_sha256 TEXT NOT NULL UNIQUE,
+                    principal_sha256 TEXT NOT NULL,
+                    created_at_ns INTEGER NOT NULL,
                     signed_receipt_json TEXT NOT NULL,
                     receipt_sha256 TEXT NOT NULL UNIQUE
                 )""")
+                conn.execute("CREATE INDEX IF NOT EXISTS reservation_principal_time "
+                             "ON reservations(principal_sha256, created_at_ns)")
         except sqlite3.Error as exc:
             raise WitnessDenied("witness database unavailable") from exc
 
@@ -207,6 +219,14 @@ class DurableWitnessLedger:
                     if conn.execute("SELECT 1 FROM reservations WHERE action_sha256=?",
                                     (a_hash,)).fetchone():
                         raise AlreadyReserved("action already reserved")
+                    now = time.time_ns()
+                    hour_ago = now - 3600 * 1000000000
+                    count = conn.execute(
+                        "SELECT count(*) FROM reservations WHERE principal_sha256 = ? "
+                        "AND created_at_ns >= ?",
+                        (p_hash, hour_ago)).fetchone()[0]
+                    if count >= self.max_per_hour:
+                        raise RateLimited("reservation quota exceeded")
                     last = conn.execute(
                         "SELECT sequence, receipt_sha256 FROM reservations "
                         "ORDER BY sequence DESC LIMIT 1").fetchone()
@@ -219,21 +239,23 @@ class DurableWitnessLedger:
                         "principal_sha256": p_hash,
                         "nonce": nonce,
                         "previous_receipt_sha256": previous,
-                        "created_at_ns": time.time_ns(),
+                        "created_at_ns": now,
                     }
                     receipt = {"record": record,
                                "signature": self.private_key.sign(_json(record)).hex()}
                     conn.execute(
-                        "INSERT INTO reservations(sequence,action_sha256,signed_receipt_json,"
-                        "receipt_sha256) VALUES (?,?,?,?)",
-                        (seq, a_hash, _json(receipt).decode("utf-8"), receipt_hash(receipt)))
+                        "INSERT INTO reservations(sequence,action_sha256,principal_sha256,"
+                        "created_at_ns,signed_receipt_json,receipt_sha256) "
+                        "VALUES (?,?,?,?,?,?)",
+                        (seq, a_hash, p_hash, now, _json(receipt).decode("utf-8"),
+                         receipt_hash(receipt)))
                     conn.execute("COMMIT")
                     return receipt
                 except BaseException:
                     if conn.in_transaction:
                         conn.execute("ROLLBACK")
                     raise
-        except AlreadyReserved:
+        except (AlreadyReserved, RateLimited):
             raise
         except sqlite3.Error as exc:
             raise WitnessDenied("witness database unavailable") from exc
@@ -243,16 +265,18 @@ class DurableWitnessLedger:
         try:
             with closing(self._connect()) as conn:
                 rows = conn.execute(
-                    "SELECT sequence, signed_receipt_json, receipt_sha256 FROM "
-                    "reservations ORDER BY sequence").fetchall()
+                    "SELECT sequence, principal_sha256, created_at_ns, signed_receipt_json,"
+                    " receipt_sha256 FROM reservations ORDER BY sequence").fetchall()
         except sqlite3.Error as exc:
             raise WitnessDenied("witness database unavailable") from exc
         records = []
         previous = ZERO_HASH
-        for expected_seq, (seq, raw, stored_hash) in enumerate(rows, 1):
+        for expected_seq, (seq, p_hash, created_at, raw, stored_hash) in enumerate(rows, 1):
             receipt = json.loads(raw)
             record = receipt["record"]
             if (seq != expected_seq or record["sequence"] != expected_seq or
+                    record["principal_sha256"] != p_hash or
+                    record["created_at_ns"] != created_at or
                     record["previous_receipt_sha256"] != previous or
                     receipt_hash(receipt) != stored_hash):
                 raise WitnessDenied("witness ledger discontinuity")
