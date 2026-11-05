@@ -14,6 +14,7 @@ from uuid import UUID
 
 from .entra import AuthorizationDenied, EntraPolicy, verify_access_token
 from .generic_cli import apply_approved
+from .witness_http import WitnessClient, WitnessDenied
 
 _ACTION_ID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\Z")
 
@@ -27,6 +28,9 @@ class GatewayConfig:
     policy: EntraPolicy
     actor_dsn: str
     resource_url: str
+    witness_url: str = ""
+    witness_bearer: str = ""
+    witness_public_key_hex: str = ""
 
     def validate(self) -> None:
         self.policy.validate()
@@ -43,6 +47,11 @@ class GatewayConfig:
             raise GatewayDenied("gateway requires a public HTTPS /mcp URL")
         if not isinstance(self.actor_dsn, str) or not self.actor_dsn.strip():
             raise GatewayDenied("missing protected DB executor")
+        try:
+            WitnessClient(self.witness_url, self.witness_bearer,
+                          self.witness_public_key_hex)
+        except WitnessDenied as exc:
+            raise GatewayDenied("independent reservation witness is required") from exc
 
     @classmethod
     def from_env(cls, environ=None) -> "GatewayConfig":
@@ -57,6 +66,9 @@ class GatewayConfig:
             ),
             actor_dsn=env.get("AGENTPROOF_ACTOR_DSN", ""),
             resource_url=env.get("AGENTPROOF_MCP_RESOURCE_URL", ""),
+            witness_url=env.get("AGENTPROOF_WITNESS_URL", ""),
+            witness_bearer=env.get("AGENTPROOF_WITNESS_OUTBOUND_TOKEN", ""),
+            witness_public_key_hex=env.get("AGENTPROOF_WITNESS_PUBLIC_KEY", ""),
         )
         config.validate()
         return config
@@ -70,11 +82,13 @@ class GuardedActionGateway:
     """
 
     def __init__(self, config: GatewayConfig, *, verifier=verify_access_token,
-                 executor=apply_approved):
+                 executor=apply_approved, witness=None):
         config.validate()
         self.config = config
         self._verifier = verifier
         self._executor = executor
+        self._witness = witness if witness is not None else WitnessClient(
+            config.witness_url, config.witness_bearer, config.witness_public_key_hex)
 
     def verify_caller(self, token: str) -> dict:
         try:
@@ -100,7 +114,15 @@ class GuardedActionGateway:
         except ValueError as exc:
             raise GatewayDenied("action denied or unavailable") from exc
 
-        self.verify_caller(token)
+        identity = self.verify_caller(token)
+        # Durable, independently signed ACK is MANDATORY before DB execution.
+        # A second admission of this UUID is refused even if the prior call
+        # timed out. The operator must reconcile before issuing a new grant.
+        try:
+            reservation_sha256 = self._witness.reserve(
+                action_id, identity["principal_object_id"])
+        except WitnessDenied as exc:
+            raise GatewayDenied("action denied or unavailable") from exc
         try:
             result = self._executor(self.config.actor_dsn, action_id)
             if (not isinstance(result, dict) or result.get("action_id") != action_id
@@ -110,7 +132,8 @@ class GuardedActionGateway:
             # A timeout may follow a committed DB transaction. Never report rollback.
             raise GatewayDenied("action denied or unavailable") from exc
         return {"action_id": action_id, "state": "submitted_unverified",
-                "independent_effect_verified": False}
+                "independent_effect_verified": False,
+                "witness_reservation_sha256": reservation_sha256}
 
 
 def build_mcp_server(config: GatewayConfig, *, gateway: GuardedActionGateway | None = None):
