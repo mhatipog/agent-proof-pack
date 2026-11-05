@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install DB driver and witness cryptography
-        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<48'
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<48' 'PyJWT[crypto]>=2.8,<3'
       - name: Check witness MAC, isolation and gateway strict mode offline
         run: python -m unittest discover -s tests -p 'test_witness_db.py' -v
       - name: Execute attack regressions against disposable PostgreSQL 16
