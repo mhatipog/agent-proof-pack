@@ -106,6 +106,47 @@ def verify_reservation(receipt: object, *, public_key_hex: str,
     return True
 
 
+def verify_witness_export(receipts: object, pinned_public_key_hex: str) -> bool:
+    """Independent, public-key-only verification of a complete *supplied* prefix.
+
+    The verifier detects modifications, internal gaps and forks in the
+    supplied sequence. It cannot know whether the witness withheld a suffix
+    or failed to admit an action that never reached this ledger.
+    """
+    if (not isinstance(receipts, list) or not receipts or
+            not isinstance(pinned_public_key_hex, str) or
+            _HEX64.fullmatch(pinned_public_key_hex) is None):
+        raise WitnessDenied("invalid independent witness export")
+    try:
+        verifier = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pinned_public_key_hex))
+        previous = ZERO_HASH
+        for sequence, receipt in enumerate(receipts, 1):
+            if not isinstance(receipt, dict) or set(receipt) != {"record", "signature"}:
+                raise WitnessDenied("invalid exported receipt")
+            record = receipt["record"]
+            signature = receipt["signature"]
+            if (not isinstance(record, dict) or set(record) != {
+                    "schema", "sequence", "action_sha256", "principal_sha256",
+                    "nonce", "previous_receipt_sha256", "created_at_ns"} or
+                    record["schema"] != SCHEMA or
+                    type(record["sequence"]) is not int or record["sequence"] != sequence or
+                    type(record["created_at_ns"]) is not int or record["created_at_ns"] < 1 or
+                    not isinstance(record["action_sha256"], str) or
+                    _HEX64.fullmatch(record["action_sha256"]) is None or
+                    not isinstance(record["principal_sha256"], str) or
+                    _HEX64.fullmatch(record["principal_sha256"]) is None or
+                    not isinstance(record["nonce"], str) or
+                    _HEX32.fullmatch(record["nonce"]) is None or
+                    record["previous_receipt_sha256"] != previous or
+                    not isinstance(signature, str) or _HEX128.fullmatch(signature) is None):
+                raise WitnessDenied("invalid exported receipt or chain discontinuity")
+            verifier.verify(bytes.fromhex(signature), _json(record))
+            previous = receipt_hash(receipt)
+        return True
+    except (InvalidSignature, ValueError, TypeError) as exc:
+        raise WitnessDenied("witness export failed public-key verification") from exc
+
+
 class DurableWitnessLedger:
     """SQLite atomic admissions with a separately held Ed25519 signing key.
 
