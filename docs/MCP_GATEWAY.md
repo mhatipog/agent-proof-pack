@@ -2,7 +2,7 @@
 
 **Status: research prototype. Synthetic CI passed; no live Codex containment test or production deployment.**
 
-The remote MCP service accepts just one operator-issued UUID and a Microsoft Entra app-only access token for a dedicated Agent Proof resource API. No agent-supplied SQL, grant, policy or destination is accepted. Before the transaction gate runs, the gateway must receive and authenticate an independently signed, durably committed witness reservation.
+The remote MCP service accepts just one operator-issued UUID and a Microsoft Entra app-only access token for a dedicated Agent Proof resource API. No agent-supplied SQL, grant, policy or destination is accepted. Before the transaction gate runs, the gateway must receive and authenticate an independently signed, durably committed witness reservation. The production gateway now also carries a short-lived witness-issued MAC that PostgreSQL itself verifies, rather than trusting the gateway's preflight check alone.
 
 ## Three trust zones
 
@@ -20,9 +20,11 @@ The remote MCP service accepts just one operator-issued UUID and a Microsoft Ent
        |                       fresh request nonce bound to caller and action
        |
        | verified signature / fresh challenge / pinned public key
+       | witness MAC token; NOT the private HMAC secret
        v
-    [PostgreSQL one-use transaction gate]
-       | fixed EXECUTE-only actor credential; separate operator issues grants
+    [PostgreSQL witness-HMAC verifier + one-use transaction gate]
+       | 120s token validity, fixed actor, protected owner-only MAC secret
+       | exact operator grant and row update in the same transaction
        v
     [Independent read-only DB outcome verifier]
 
@@ -35,6 +37,7 @@ Use a dedicated host/VM and service account with a private directory not writabl
 Witness service environment:
 - AGENTPROOF_WITNESS_SEED_HEX: 64-character lowercase hexadecimal seed; witness server ONLY
 - AGENTPROOF_WITNESS_INBOUND_TOKEN: independent random service credential of at least 32 characters
+- AGENTPROOF_WITNESS_DB_MAC_KEY_HEX: independent 32-byte HMAC key, matching the trusted DB config row; **witness and DB only**, never gateway
 
 On the witness host:
 
@@ -45,7 +48,7 @@ The database is created with private permissions; existing loose permissions or 
 
 ## Provisioning the gateway
 
-First install the existing one-use PostgreSQL transaction gate in a disposable database, enroll synthetic test tables and create distinct operator, restricted actor and read-only observer accounts. Then configure a separate Microsoft Entra API with an app-only role named AgentProof.Apply. Do not use a Fabric or Graph access token.
+First install both the original transaction gate and the [DB-enforced witness wrapper](DB_WITNESS_ENFORCEMENT.md) in a disposable database, enroll synthetic test tables, and create distinct operator, restricted actor and read-only observer accounts. **Revoke the executor role's privilege to call the legacy one-argument function**, or it can bypass witness admission. Then configure a separate Microsoft Entra API with an app-only role named AgentProof.Apply. Do not use a Fabric or Graph access token.
 
 Protected gateway environment:
 - AGENTPROOF_ENTRA_TENANT_ID: exact allowed tenant UUID
@@ -79,7 +82,7 @@ There is just one exposed action:
 
     apply_preapproved_postgres_change(action_id="operator-issued-uuid")
 
-The gateway checks identity and receives a signed pre-execution ACK before attempting the fixed restricted PostgreSQL function. The database separately verifies the operator-created expiring one-use grant. A signed reservation is evidence of an accepted intent, NOT proof the DB transaction committed.
+The gateway checks identity and receives a signed pre-execution ACK plus a database MAC admission token before invoking the witnessed PostgreSQL function. PostgreSQL verifies the fresh MAC under an independently protected key and separately validates the operator-created, expiring one-use grant. A signed reservation is evidence of an accepted intent, NOT proof the DB transaction committed.
 
 Success is reported only as submitted_unverified. Afterward, a separately privileged witness runs agent-guarded observe and agent-guarded check using the trusted operator contract. If execution times out, the DB may already have committed. The witness prevents automated re-execution under the same UUID; an operator must reconcile the DB state and issue a fresh grant if needed.
 
@@ -101,14 +104,20 @@ Future public blockchain anchoring is separate research in PR #14: https://githu
     python -m pip install -e '.[gateway]' 'httpx>=0.27,<1'
     python -m unittest discover -s tests -p 'test_mcp_gateway*.py' -v
     python -m unittest discover -s tests -p 'test_witness_reservations.py' -v
+    python -m unittest discover -s tests -p 'test_witness_db.py' -v
+
+The real PostgreSQL 16 integration tests and network-segmentation probes are in
+[DB-enforced witness testing](DB_WITNESS_ENFORCEMENT.md) and
+[labs/network_isolation/verify.sh](../labs/network_isolation/verify.sh).
+Both use only synthetic services and credentials.
 
 Tests exercise fake/real RSA JWT claims through MCP HTTP, wrong role/identity, failed witness blocking execution, independent signed reservations and fresh challenges, disk persistence and concurrent duplicate rejection, attempted replay after an ambiguous database result, tampered export and pinned head detection. The original dependency-free test suite still runs without optional gateway packages.
 
 ## Limits before a live adversarial Codex trial
 
-- No actual isolated Codex deployment, real Entra app registration or protected service proxy has been tested. The agent must be denied alternative network and administrative paths, not just instructed to use MCP.
+- A synthetic Docker network lab now demonstrates separate gateway, database and witness segments, including denied direct IP connections from an unprivileged agent container. It does **not** run Codex, real Entra, authentic HTTPS proxies or the real services together. The agent must still be denied alternative host, network and administrative paths in any actual deployment.
 - The independent witness can be modified by a compromised witness administrator. Digital signatures prevent falsification by outsiders lacking the private key, not by its owner. Externally pinned heads and future blockchain anchoring improve retrospective detection.
-- A compromised gateway administrator can bypass the witness and call PostgreSQL directly. To prove EVERY protected DB execution has a witness ACK, the DB gate itself would need to validate a witness-signed authorization, or an equally independent enforcement mechanism. This is not implemented.
+- When the new witnessed PostgreSQL wrapper is installed, the old direct function is revoked from the actor, and the database validates a witness-issued HMAC inside its transaction. This blocks bypass through that specific actor identity. It does not stop a database owner or actor with other inherited privileges, and it does not prove all external effects were captured.
 - Authenticated agents can reserve arbitrary well-formed UUIDs with no actual grant. The witness now enforces an atomic per-principal hourly quota, but grant existence preflight, per-IP proxy rate limits, long-term storage retention, backups, key rotation and failover remain necessary.
 - SQLite and PostgreSQL are not one distributed transaction. A recorded intent followed by an uncertain DB commit is not proof of rollback or success. Operator reconciliation remains mandatory.
 - The witness records accepted post-authentication intents, NOT rejected token attempts, unrelated shell actions, all model reasoning, or omitted actions.
