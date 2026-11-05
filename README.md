@@ -8,6 +8,12 @@ An API can return 200 while an agent updates the wrong record, does nothing, or 
 [![PostgreSQL integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/postgres-effect.yml)
 [![Terraform integration](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml/badge.svg)](https://github.com/mhatipog/agent-proof-pack/actions/workflows/terraform-integration.yml)
 
+## Experimental remote MCP authorization gateway
+
+The [remote MCP gateway](docs/MCP_GATEWAY.md) offers one narrow, Entra-authenticated tool to execute *preapproved* PostgreSQL action UUIDs through the existing transaction guard. It accepts no agent-supplied SQL or grants, binds only to loopback behind a separately configured HTTPS proxy, and returns **submitted_unverified** rather than pretending the effect has been proven.
+
+This is an **isolated-service prototype**: secure deployment requires separate credentials, restricted network egress and an independently controlled witness. No live Codex deployment or real Entra/DB gateway credentials are part of this feature.
+
 ## Entra-authenticated guarded execution
 
 The optional [Entra action executor](docs/ENTRA_ACTION_EXECUTOR.md) binds a preapproved PostgreSQL change to a signed Microsoft Entra app-only API access token. The executor checks the exact tenant, application and service principal, token audience, and dedicated `AgentProof.Apply` role before invoking the one-use transaction gate. An independent database reader must still verify the outcome. Tokens issued for Fabric, Microsoft Graph or another API cannot authorize this guard.
