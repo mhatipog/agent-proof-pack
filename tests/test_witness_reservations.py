@@ -1,7 +1,16 @@
 """Security regressions for the independent, durable pre-execution witness."""
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+try:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from agentproof.witness_http import WitnessClient, make_handler
+    from agentproof.witness_reservations import (
+        AlreadyReserved, DurableWitnessLedger, WitnessDenied, receipt_hash,
+        verify_reservation, witness_public_key,
+    )
+    HAS_WITNESS_CRYPTO = True
+except ImportError:
+    HAS_WITNESS_CRYPTO = False
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -13,16 +22,12 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from agentproof.witness_http import WitnessClient, make_handler
-from agentproof.witness_reservations import (
-    AlreadyReserved, DurableWitnessLedger, WitnessDenied, receipt_hash,
-    verify_reservation, witness_public_key,
-)
 from test_mcp_gateway import APP, ACTION, PRINCIPAL, config, GatewayDenied, GuardedActionGateway
 
 NONCE = "a" * 32
 
 
+@unittest.skipUnless(HAS_WITNESS_CRYPTO, "install optional witness cryptography dependencies")
 class WitnessLedgerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
