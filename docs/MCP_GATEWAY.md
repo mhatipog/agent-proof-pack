@@ -39,9 +39,9 @@ Witness service environment:
 On the witness host:
 
     python -m pip install -e '.[gateway]'
-    agent-proof-witness --host 127.0.0.1 --port 8030 --db /var/lib/agentproof/witness.sqlite3
+    agent-proof-witness --host 127.0.0.1 --port 8030 --db /var/lib/agentproof/witness.sqlite3 --max-reservations-per-hour 300
 
-The database is created with private permissions; existing loose permissions or a group/world-writable parent are refused. The witness binds loopback only. Expose its POST /v1/reservations endpoint through an independently configured HTTPS reverse proxy, preferably requiring gateway mTLS plus source allowlisting. It does not expose arbitrary SQL, grant-writing or receipt-deletion APIs.
+The database is created with private permissions; existing loose permissions or a group/world-writable parent are refused. The witness enforces an atomic, per-principal rolling-hour admission quota (default 300; configurable 1-10,000). Excess reservations receive HTTP 429 without advancing the signed sequence. This bounds per-principal write volume but does not confirm that requested IDs are valid operator grants. The witness binds loopback only. Expose its POST /v1/reservations endpoint through an independently configured HTTPS reverse proxy, preferably requiring gateway mTLS plus source allowlisting. It does not expose arbitrary SQL, grant-writing or receipt-deletion APIs.
 
 ## Provisioning the gateway
 
@@ -109,7 +109,7 @@ Tests exercise fake/real RSA JWT claims through MCP HTTP, wrong role/identity, f
 - No actual isolated Codex deployment, real Entra app registration or protected service proxy has been tested. The agent must be denied alternative network and administrative paths, not just instructed to use MCP.
 - The independent witness can be modified by a compromised witness administrator. Digital signatures prevent falsification by outsiders lacking the private key, not by its owner. Externally pinned heads and future blockchain anchoring improve retrospective detection.
 - A compromised gateway administrator can bypass the witness and call PostgreSQL directly. To prove EVERY protected DB execution has a witness ACK, the DB gate itself would need to validate a witness-signed authorization, or an equally independent enforcement mechanism. This is not implemented.
-- Authenticated agents can reserve arbitrary well-formed UUIDs with no actual grant, potentially exhausting witness disk. Per-principal quotas, grant preflight, ingress rate limits, backups, key rotation and failover remain necessary.
+- Authenticated agents can reserve arbitrary well-formed UUIDs with no actual grant. The witness now enforces an atomic per-principal hourly quota, but grant existence preflight, per-IP proxy rate limits, long-term storage retention, backups, key rotation and failover remain necessary.
 - SQLite and PostgreSQL are not one distributed transaction. A recorded intent followed by an uncertain DB commit is not proof of rollback or success. Operator reconciliation remains mandatory.
 - The witness records accepted post-authentication intents, NOT rejected token attempts, unrelated shell actions, all model reasoning, or omitted actions.
 - A database owner can bypass the reference table guard. No production safety certification is claimed.
