@@ -22,7 +22,7 @@ from urllib.error import HTTPError, URLError
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .witness_reservations import (
-    AlreadyReserved, DurableWitnessLedger, WitnessDenied, receipt_hash,
+    AlreadyReserved, RateLimited, DurableWitnessLedger, WitnessDenied, receipt_hash,
     verify_reservation,
 )
 
@@ -167,6 +167,8 @@ def make_handler(ledger: DurableWitnessLedger, bearer: str):
                 return self._respond(201, {"receipt": receipt})
             except AlreadyReserved:
                 return self._respond(409, {"error": "already_reserved"})
+            except RateLimited:
+                return self._respond(429, {"error": "rate_limited"})
             except WitnessDenied:
                 return self._respond(503, {"error": "unavailable"})
 
@@ -178,6 +180,7 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8030)
     parser.add_argument("--db", required=True, help="protected durable SQLite file")
+    parser.add_argument("--max-reservations-per-hour", type=int, default=300)
     args = parser.parse_args(argv)
     if args.host not in ("127.0.0.1", "::1", "localhost") or not 1 <= args.port <= 65535:
         parser.error("witness must bind loopback behind its independent HTTPS proxy")
@@ -189,7 +192,7 @@ def main(argv=None) -> int:
     os.umask(0o077)
     try:
         ledger = DurableWitnessLedger(args.db, Ed25519PrivateKey.from_private_bytes(
-            bytes.fromhex(seed)))
+            bytes.fromhex(seed)), max_per_hour=args.max_reservations_per_hour)
         handler = make_handler(ledger, bearer)
     except (WitnessDenied, ValueError) as exc:
         parser.error(str(exc))
