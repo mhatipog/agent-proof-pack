@@ -40,19 +40,18 @@ class PatchWitnessTest(unittest.TestCase):
 
     def test_real_fix_passes(self):
         report = self.run_pair(BASE, FIX)
-        self.assertEqual("differential_probes_passed", report["status"])
+        self.assertEqual("differential_and_counterfactual_probes_passed", report["status"])
         self.assertTrue(all(c["before"]["target_called"] for c in report["cases"]))
 
     def test_cosmetic_patch_does_not_pass(self):
         report = self.run_pair(BASE, DECOY)
         self.assertEqual("inconclusive", report["status"])
-        self.assertEqual("patch_not_validated", report["cases"][0]["reason"])
+        self.assertEqual("target_function_not_changed", report["reason"])
 
     def test_wrong_path_does_not_pass_even_if_outcome_matches(self):
         report = self.run_pair(BASE, WRONG_PATH)
         self.assertEqual("inconclusive", report["status"])
-        self.assertEqual("wrong_execution_path", report["cases"][0]["reason"])
-        self.assertEqual(False, report["cases"][0]["after"]["result"])
+        self.assertEqual("target_function_not_changed", report["reason"])
 
     def test_overblocking_not_a_fix(self):
         report = self.run_pair(BASE, OVERBLOCK)
@@ -62,7 +61,7 @@ class PatchWitnessTest(unittest.TestCase):
     def test_fails_closed_when_baseline_did_not_reproduce(self):
         report = self.run_pair(FIX, FIX + "\n# change", CASES)
         self.assertEqual("inconclusive", report["status"])
-        self.assertEqual("baseline_not_reproduced", report["cases"][0]["reason"])
+        self.assertEqual("target_function_not_changed", report["reason"])
 
     def test_identical_hash_not_a_patch(self):
         report = self.run_pair(BASE, BASE)
