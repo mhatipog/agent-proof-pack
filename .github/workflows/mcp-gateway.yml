@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mcp-gateway-\${{ github.ref }}
+  group: mcp-gateway-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
