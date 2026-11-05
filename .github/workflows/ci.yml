@@ -18,6 +18,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Patch-witness synthetic regression lab
+        run: python -m unittest discover -s labs/security_patch_witness/tests -v
       - name: Public failure scenarios
         run: python -m agentproof suite
       - name: Incident-derived regression scenarios
